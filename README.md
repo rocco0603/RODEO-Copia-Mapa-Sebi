@@ -40,6 +40,31 @@ cp copernicus.credentials.example.ts copernicus.credentials.ts
 
 El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 
+## Backend inicial
+
+El backend vive en `backend/` y usa Node.js, TypeScript, Express y PostgreSQL
+mediante `pg`. Para configurarlo, copiá `backend/.env.example` como
+`backend/.env` y completá `DATABASE_URL` localmente; ese archivo no se debe
+versionar.
+
+```bash
+cd backend
+npm install
+npm run db:migrate
+npm run dev
+```
+
+El health check queda disponible en `http://localhost:3001/api/health` y no
+expone la cadena de conexión. Para verificar tipos o generar el build:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+La migración inicial crea las siete tablas de dominio y sus índices básicos.
+Todavía no implementa autenticación ni conecta el frontend.
+
 ## Qué NO viene en esta copia (y cómo se recupera)
 
 | Carpeta / archivo | Cómo vuelve |

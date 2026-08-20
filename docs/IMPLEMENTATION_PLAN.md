@@ -36,6 +36,12 @@ Requisitos:
 - migraciones/schema versionado en repo;
 - errores JSON consistentes.
 
+### Estado al 20/08/2026
+
+Completada la base técnica en `backend/`: proyecto Node.js + TypeScript,
+Express, configuración por entorno, pool PostgreSQL con `pg`, `GET
+/api/health`, build/typecheck y script de migración.
+
 No conectar secretos reales al Git.
 
 ## Fase 2 — esquema PostgreSQL
@@ -51,6 +57,14 @@ Implementar las siete tablas definidas en `DATABASE_MODEL.md`:
 7. notificaciones.
 
 Agregar constraints, índices y foreign keys.
+
+### Estado al 20/08/2026
+
+Completado `backend/migrations/001_initial_schema.sql` con las siete tablas
+definidas en `docs/DATABASE_MODEL.md`, sus claves foráneas, restricciones,
+unicidad e índices. La migración es idempotente y se ejecuta dentro de una
+transacción; no se agregó una tabla auxiliar de versiones para conservar
+exactamente las siete tablas de dominio de esta primera etapa.
 
 Primero debe poder ejecutarse contra PostgreSQL local o una URL de DB de entorno. Después se usará Neon.
 
