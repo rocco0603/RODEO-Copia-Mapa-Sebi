@@ -324,3 +324,16 @@ iguales. Configurá `TEST_DATABASE_URL` sólo con una base o branch de PostgreSQ
 descartable creado para testing, sin incluir la URL en el repositorio. Si no
 está configurada, la integración se omite de forma segura y los tests unitarios
 siguen ejecutándose.
+
+## Historial paginado y estado actual
+
+Los endpoints autenticados de historial aceptan `limit` (por defecto 50,
+mÃ¡ximo 100), `offset` (por defecto 0) y devuelven `paginacion` con `total` y
+`hayMas`. Satélite acepta además `fuente`, `desde` y `hasta`; clima y usos
+aceptan `desde` y `hasta`. Las fechas `DATE` se expresan siempre como
+`YYYY-MM-DD`.
+
+`GET /api/lotes/:id/estado` devuelve una consolidación objetiva de la última
+óptica, el último radar, el clima más reciente y el último uso. No consulta
+servicios externos, no calcula un score nuevo y no recomienda lotes: es una
+capa de datos para futuras etapas de análisis.

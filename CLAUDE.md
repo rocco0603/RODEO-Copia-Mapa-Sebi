@@ -89,3 +89,12 @@ esta etapa.
 Validar cambios con TypeScript y build. Cuando exista backend, validar también sus endpoints y su conexión/schema.
 
 No hay que asumir que algo "debería" funcionar: comprobarlo y documentar cualquier decisión relevante.
+
+## Historial y estado actual
+
+El backend expone historial paginado con `limit` máximo 100, `offset` y filtros
+calendario. También expone `GET /api/lotes/:id/estado`, que sólo consolida
+datos persistidos recientes de satélite, clima y uso. Este endpoint no llama
+servicios externos, no agrega scoring ni recomendaciones y mantiene separados
+Sentinel-1 y Sentinel-2. Las columnas PostgreSQL `DATE` se manejan como
+`YYYY-MM-DD`; los `TIMESTAMPTZ` siguen siendo instantes ISO.

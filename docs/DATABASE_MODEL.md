@@ -281,6 +281,15 @@ no se persiste un contador fijo.
 
 La base guarda GeoJSON; la validación geométrica se hace en la aplicación/backend usando el mismo criterio del frontend.
 
+## Fechas y estado consolidado
+
+Esta etapa no agrega migraciones. Las columnas existentes `observed_at`,
+`dias_clima.fecha` y `usos_lote.fecha` son PostgreSQL `DATE`; `consulted_at`,
+`created_at` y `updated_at` son `TIMESTAMPTZ`. El backend configura el parser
+de `pg` para que `DATE` llegue como string `YYYY-MM-DD`, evitando desplazamientos
+por zona horaria. `/api/lotes/:id/estado` sólo compone estas tablas y no
+persiste datos derivados.
+
 Reglas mínimas:
 
 - establecimiento debe ser un Polygon válido;

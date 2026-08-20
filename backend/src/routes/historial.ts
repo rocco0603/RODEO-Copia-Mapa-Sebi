@@ -3,6 +3,8 @@ import { pool } from '../db/pool.js';
 import { requiereAutenticacion } from '../auth/middleware.js';
 import { asyncHandler } from '../http/async-handler.js';
 import { ApiError } from '../http/errors.js';
+import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp, hoyCalendario } from '../date.js';
+import { leerPaginacion, leerRangoCalendario, type Paginacion, type RangoCalendario } from '../http/query.js';
 
 export const historialRouter = Router();
 historialRouter.use(requiereAutenticacion);
@@ -25,9 +27,7 @@ async function loteDelUsuario(req: Request): Promise<string> {
 }
 
 function fechaCalendario(value: unknown, campo: string): string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new ApiError(400, 'INVALID_DATE', `${campo} debe tener formato YYYY-MM-DD.`);
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ApiError(400, 'INVALID_DATE', `${campo} no es una fecha válida.`);
+  if (!esFechaCalendario(value)) throw new ApiError(400, 'INVALID_DATE', `${campo} debe tener formato YYYY-MM-DD y ser válida.`);
   return value;
 }
 
@@ -102,8 +102,24 @@ historialRouter.post('/:id/mediciones-satelitales', asyncHandler(async (req, res
 
 historialRouter.get('/:id/mediciones-satelitales', asyncHandler(async (req, res) => {
   const loteId = await loteDelUsuario(req);
-  const result = await pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 ORDER BY observed_at DESC, fuente', [loteId]);
-  res.json({ mediciones: result.rows.map(measurementDto) });
+  const paginacion = leerPaginacion(req.query);
+  const rango = leerRangoCalendario(req.query);
+  const fuente = req.query.fuente;
+  if (fuente !== undefined && (typeof fuente !== 'string' || (fuente !== 'sentinel-1' && fuente !== 'sentinel-2'))) {
+    throw new ApiError(400, 'INVALID_SOURCE', 'La fuente satelital no es válida.');
+  }
+  const condiciones = ['lote_id = $1'];
+  const valores: unknown[] = [loteId];
+  if (fuente) { valores.push(fuente); condiciones.push(`fuente = $${valores.length}`); }
+  if (rango.desde) { valores.push(rango.desde); condiciones.push(`observed_at >= $${valores.length}::date`); }
+  if (rango.hasta) { valores.push(rango.hasta); condiciones.push(`observed_at <= $${valores.length}::date`); }
+  const where = condiciones.join(' AND ');
+  const total = await pool.query<{ total: string }>(`SELECT COUNT(*)::text AS total FROM mediciones_satelitales WHERE ${where}`, valores);
+  const limitIndex = valores.push(paginacion.limit);
+  const offsetIndex = valores.push(paginacion.offset);
+  const result = await pool.query(`SELECT * FROM mediciones_satelitales WHERE ${where} ORDER BY observed_at DESC, fuente ASC, id ASC LIMIT $${limitIndex} OFFSET $${offsetIndex}`, valores);
+  const totalNumber = Number(total.rows[0].total);
+  res.json({ mediciones: result.rows.map(measurementDto), paginacion: { ...paginacion, total: totalNumber, hayMas: paginacion.offset + result.rows.length < totalNumber } });
 }));
 
 historialRouter.post('/:id/clima', asyncHandler(async (req, res) => {
@@ -130,17 +146,35 @@ historialRouter.post('/:id/clima', asyncHandler(async (req, res) => {
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }));
 
-async function consultasClima(loteId: string) {
-  const consultas = await pool.query('SELECT * FROM consultas_clima WHERE lote_id = $1 ORDER BY consulted_at DESC', [loteId]);
-  const result = [];
-  for (const consulta of consultas.rows) {
-    const dias = await pool.query('SELECT fecha, lluvia_mm, temp_min, temp_max, es_pronostico FROM dias_clima WHERE consulta_clima_id = $1 ORDER BY fecha', [consulta.id]);
-    result.push({ id: consulta.id, consultedAt: consulta.consulted_at, lluviaUltimos7Dias: consulta.lluvia_ultimos_7_dias, lluviaProximosDias: consulta.lluvia_proximos_dias, categoria: consulta.categoria, dias: dias.rows.map((dia) => ({ fecha: dia.fecha, lluviaMm: dia.lluvia_mm, tempMin: dia.temp_min, tempMax: dia.temp_max, esPronostico: dia.es_pronostico })) });
+async function consultasClima(loteId: string, paginacion: Paginacion, rango: RangoCalendario) {
+  const condiciones = ['lote_id = $1'];
+  const valores: unknown[] = [loteId];
+  if (rango.desde) { valores.push(rango.desde); condiciones.push(`consulted_at >= ($${valores.length}::date AT TIME ZONE 'UTC')`); }
+  if (rango.hasta) { valores.push(rango.hasta); condiciones.push(`consulted_at < (($${valores.length}::date + INTERVAL '1 day') AT TIME ZONE 'UTC')`); }
+  const where = condiciones.join(' AND ');
+  const total = await pool.query<{ total: string }>(`SELECT COUNT(*)::text AS total FROM consultas_clima WHERE ${where}`, valores);
+  const limitIndex = valores.push(paginacion.limit);
+  const offsetIndex = valores.push(paginacion.offset);
+  const consultas = await pool.query(`SELECT * FROM consultas_clima WHERE ${where} ORDER BY consulted_at DESC, id ASC LIMIT $${limitIndex} OFFSET $${offsetIndex}`, valores);
+  const ids = consultas.rows.map((consulta) => consulta.id as string);
+  const dias = ids.length === 0 ? { rows: [] } : await pool.query('SELECT consulta_clima_id, fecha, lluvia_mm, temp_min, temp_max, es_pronostico FROM dias_clima WHERE consulta_clima_id = ANY($1::uuid[]) ORDER BY fecha', [ids]);
+  const diasPorConsulta = new Map<string, Array<Record<string, unknown>>>();
+  for (const dia of dias.rows) {
+    const lista = diasPorConsulta.get(dia.consulta_clima_id) ?? [];
+    lista.push({ fecha: dia.fecha, lluviaMm: dia.lluvia_mm, tempMin: dia.temp_min, tempMax: dia.temp_max, esPronostico: dia.es_pronostico });
+    diasPorConsulta.set(dia.consulta_clima_id, lista);
   }
-  return result;
+  const items = consultas.rows.map((consulta) => ({ id: consulta.id, consultedAt: consulta.consulted_at, lluviaUltimos7Dias: consulta.lluvia_ultimos_7_dias, lluviaProximosDias: consulta.lluvia_proximos_dias, categoria: consulta.categoria, dias: diasPorConsulta.get(consulta.id) ?? [] }));
+  const totalNumber = Number(total.rows[0].total);
+  return { items, paginacion: { ...paginacion, total: totalNumber, hayMas: paginacion.offset + items.length < totalNumber } };
 }
 
-historialRouter.get('/:id/clima', asyncHandler(async (req, res) => { res.json({ consultas: await consultasClima(await loteDelUsuario(req)) }); }));
+historialRouter.get('/:id/clima', asyncHandler(async (req, res) => {
+  const paginacion = leerPaginacion(req.query);
+  const rango = leerRangoCalendario(req.query);
+  const resultado = await consultasClima(await loteDelUsuario(req), paginacion, rango);
+  res.json({ consultas: resultado.items, paginacion: resultado.paginacion });
+}));
 
 historialRouter.post('/:id/usos', asyncHandler(async (req, res) => {
   const loteId = await loteDelUsuario(req); const body = req.body as Record<string, unknown>;
@@ -149,14 +183,80 @@ historialRouter.post('/:id/usos', asyncHandler(async (req, res) => {
 }));
 
 historialRouter.get('/:id/usos', asyncHandler(async (req, res) => {
-  const loteId = await loteDelUsuario(req); const result = await pool.query('SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE lote_id = $1 ORDER BY fecha DESC, created_at DESC', [loteId]);
-  res.json({ usos: result.rows.map((uso) => ({ id: uso.id, loteId: uso.lote_id, fecha: uso.fecha, origen: uso.origen, createdAt: uso.created_at })) });
+  const loteId = await loteDelUsuario(req);
+  const paginacion = leerPaginacion(req.query);
+  const rango = leerRangoCalendario(req.query);
+  const condiciones = ['lote_id = $1'];
+  const valores: unknown[] = [loteId];
+  if (rango.desde) { valores.push(rango.desde); condiciones.push(`fecha >= $${valores.length}::date`); }
+  if (rango.hasta) { valores.push(rango.hasta); condiciones.push(`fecha <= $${valores.length}::date`); }
+  const where = condiciones.join(' AND ');
+  const total = await pool.query<{ total: string }>(`SELECT COUNT(*)::text AS total FROM usos_lote WHERE ${where}`, valores);
+  const limitIndex = valores.push(paginacion.limit);
+  const offsetIndex = valores.push(paginacion.offset);
+  const result = await pool.query(`SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE ${where} ORDER BY fecha DESC, created_at DESC, id ASC LIMIT $${limitIndex} OFFSET $${offsetIndex}`, valores);
+  const totalNumber = Number(total.rows[0].total);
+  res.json({ usos: result.rows.map((uso) => ({ id: uso.id, loteId: uso.lote_id, fecha: uso.fecha, origen: uso.origen, createdAt: uso.created_at })), paginacion: { ...paginacion, total: totalNumber, hayMas: paginacion.offset + result.rows.length < totalNumber } });
+}));
+
+function estadisticas(row: Record<string, unknown>, prefijo: string) {
+  return { media: row[`${prefijo}_media`], mediana: row[`${prefijo}_mediana`], min: row[`${prefijo}_min`], max: row[`${prefijo}_max`], desvio: row[`${prefijo}_desvio`] };
+}
+
+function estadoOptico(row: Record<string, unknown>) {
+  const observedAt = row.observed_at as string;
+  return {
+    id: row.id,
+    observedAt,
+    consultedAt: row.consulted_at,
+    diasDesdeObservacion: Math.max(0, diasEntreFechas(observedAt, hoyCalendario())),
+    coberturaValida: row.cobertura_valida,
+    ndvi: estadisticas(row, 'ndvi'),
+    ndmi: estadisticas(row, 'ndmi'),
+    ndwi: estadisticas(row, 'ndwi'),
+    evi: estadisticas(row, 'evi'),
+    puntaje: row.puntaje,
+    categoria: row.categoria,
+  };
+}
+
+function estadoRadar(row: Record<string, unknown>) {
+  const observedAt = row.observed_at as string;
+  return { id: row.id, observedAt, consultedAt: row.consulted_at, diasDesdeObservacion: Math.max(0, diasEntreFechas(observedAt, hoyCalendario())), rvi: estadisticas(row, 'rvi') };
+}
+
+historialRouter.get('/:id/estado', asyncHandler(async (req, res) => {
+  const loteId = await loteDelUsuario(req);
+  const lote = await pool.query('SELECT id, numero, apodo, activo FROM lotes WHERE id = $1', [loteId]);
+  const [optico, radar, consulta, uso] = await Promise.all([
+    pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2 ORDER BY observed_at DESC, consulted_at DESC, id ASC LIMIT 1', [loteId, 'sentinel-2']),
+    pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2 ORDER BY observed_at DESC, consulted_at DESC, id ASC LIMIT 1', [loteId, 'sentinel-1']),
+    pool.query('SELECT * FROM consultas_clima WHERE lote_id = $1 ORDER BY consulted_at DESC, id ASC LIMIT 1', [loteId]),
+    pool.query('SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE lote_id = $1 ORDER BY fecha DESC, created_at DESC, id ASC LIMIT 1', [loteId]),
+  ]);
+  const consultaActual = consulta.rows[0];
+  const hoy = hoyCalendario();
+  const diaActual = consultaActual ? await pool.query('SELECT fecha, lluvia_mm, temp_min, temp_max, es_pronostico FROM dias_clima WHERE consulta_clima_id = $1 AND fecha = $2::date LIMIT 1', [consultaActual.id, hoy]) : { rows: [] };
+  const usoActual = uso.rows[0];
+  res.json({
+    lote: lote.rows[0],
+    satelite: { optico: optico.rows[0] ? estadoOptico(optico.rows[0]) : null, radar: radar.rows[0] ? estadoRadar(radar.rows[0]) : null },
+    clima: consultaActual ? {
+      consultedAt: consultaActual.consulted_at,
+      horasDesdeConsulta: horasDesdeTimestamp(consultaActual.consulted_at),
+      lluviaUltimos7Dias: consultaActual.lluvia_ultimos_7_dias,
+      lluviaProximosDias: consultaActual.lluvia_proximos_dias,
+      categoria: consultaActual.categoria,
+      hoy: diaActual.rows[0] ? { fecha: diaActual.rows[0].fecha, lluviaMm: diaActual.rows[0].lluvia_mm, tempMin: diaActual.rows[0].temp_min, tempMax: diaActual.rows[0].temp_max, esPronostico: diaActual.rows[0].es_pronostico } : null,
+    } : null,
+    uso: { ultimoUso: usoActual ? { fecha: usoActual.fecha, origen: usoActual.origen } : null, diasDescanso: usoActual ? Math.max(0, diasEntreFechas(usoActual.fecha, hoy)) : null },
+  });
 }));
 
 historialRouter.get('/:id/historial', asyncHandler(async (req, res) => {
   const loteId = await loteDelUsuario(req);
-  const mediciones = await pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 ORDER BY observed_at DESC, fuente', [loteId]);
-  const usos = await pool.query('SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE lote_id = $1 ORDER BY fecha DESC, created_at DESC', [loteId]);
-  const clima = await consultasClima(loteId);
-  res.json({ satelite: mediciones.rows.map(measurementDto), clima, usos: usos.rows.map((uso) => ({ id: uso.id, loteId: uso.lote_id, fecha: uso.fecha, origen: uso.origen, createdAt: uso.created_at })) });
+  const mediciones = await pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 ORDER BY observed_at DESC, fuente ASC, id ASC LIMIT 51', [loteId]);
+  const usos = await pool.query('SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE lote_id = $1 ORDER BY fecha DESC, created_at DESC, id ASC LIMIT 51', [loteId]);
+  const clima = await consultasClima(loteId, { limit: 50, offset: 0 }, {});
+  res.json({ satelite: mediciones.rows.slice(0, 50).map(measurementDto), clima: clima.items, usos: usos.rows.slice(0, 50).map((uso) => ({ id: uso.id, loteId: uso.lote_id, fecha: uso.fecha, origen: uso.origen, createdAt: uso.created_at })), paginacion: { satelite: { limit: 50, offset: 0, hayMas: mediciones.rows.length > 50 }, clima: clima.paginacion, usos: { limit: 50, offset: 0, hayMas: usos.rows.length > 50 } } });
 }));

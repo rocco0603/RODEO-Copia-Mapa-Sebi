@@ -265,3 +265,46 @@ el mapa obtiene establecimiento y lotes desde estos contratos privados de API;
 `localStorage` no participa en esa carga.
 
 Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existentes (`Establecimiento`, `Lote`, `ResultadoLote`, `ResultadoClimaLote`) para minimizar cambios en componentes de mapa y paneles.
+
+## Contratos actuales de historial
+
+Los endpoints `GET /api/lotes/:id/mediciones-satelitales`,
+`GET /api/lotes/:id/clima` y `GET /api/lotes/:id/usos` aceptan `limit` (1 a
+100, default 50), `offset` (default 0), `desde` y `hasta` como fechas
+`YYYY-MM-DD`, con `desde <= hasta`. Satélite acepta además
+`fuente=sentinel-1|sentinel-2`.
+
+Las respuestas conservan sus colecciones (`mediciones`, `consultas`, `usos`)
+y agregan metadata consistente:
+
+```json
+{ "paginacion": { "limit": 50, "offset": 0, "total": 0, "hayMas": false } }
+```
+
+El filtro temporal de clima usa `consulted_at` como instante UTC; los filtros
+de satélite y usos usan columnas `DATE`. El historial consolidado conserva las
+colecciones para compatibilidad con la ficha actual, limitadas a las últimas
+50 entradas por colección.
+
+## `GET /api/lotes/:id/estado`
+
+Este endpoint autenticado devuelve en una respuesta los datos persistidos más
+recientes del lote:
+
+```json
+{
+  "lote": { "id": "...", "numero": 3, "apodo": null, "activo": true },
+  "satelite": { "optico": null, "radar": null },
+  "clima": null,
+  "uso": { "ultimoUso": null, "diasDescanso": null }
+}
+```
+
+Cuando existen datos, óptica y radar se seleccionan por separado y exponen
+sus estadísticas existentes junto con la edad objetiva de la observación.
+Clima expone la consulta más reciente, `horasDesdeConsulta` y el día actual
+sólo si existe en `dias_clima`. El descanso es una diferencia de fechas
+calendario; sin uso es `null`.
+
+`/estado` no llama Copernicus ni Open-Meteo, no combina Sentinel-1 con
+Sentinel-2, no calcula un score nuevo y no es un modelo ni una recomendación.

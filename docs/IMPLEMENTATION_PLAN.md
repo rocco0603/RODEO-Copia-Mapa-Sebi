@@ -243,3 +243,14 @@ Cada fase debe:
 - dejar pasos claros de ejecución;
 - evitar secretos en Git;
 - incluir una prueba manual mínima o test automatizado cuando corresponda.
+
+## Etapa de historial paginado y estado actual
+
+Implementada sobre las tablas existentes, sin migración nueva:
+
+- paginación y filtros validados para satélite, clima y usos;
+- carga de días de clima con una consulta por página, evitando N+1;
+- `GET /api/lotes/:id/estado` como DTO consolidado, sin modelo ni
+  recomendación;
+- tests unitarios de fechas/query params y tests de integración de paginación,
+  filtros, estado, datos faltantes y seguridad.

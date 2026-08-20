@@ -115,6 +115,16 @@ Pendiente:
 - configuración final de CORS/cookies según despliegue;
 - CI/CD.
 
+## Historial y estado actual
+
+Decidido: los listados de historial usan `limit`/`offset` con límite máximo
+100; `/api/lotes/:id/historial` conserva compatibilidad y devuelve como máximo
+50 elementos por colección. `GET /api/lotes/:id/estado` es una capa de datos
+objetiva y no representa el futuro modelo/recomendador.
+
+Pendiente: definir, en una etapa posterior, qué reglas agronómicas consumirán
+este DTO y cómo se calibrarán sin confundirlo con el scoring provisional.
+
 ## Ganado y GPS
 
 ## Decisiones cerradas de la etapa actual

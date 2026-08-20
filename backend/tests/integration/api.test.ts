@@ -141,6 +141,7 @@ integration('API backend de RODEO', () => {
         other.post(`/api/lotes/${owner.lot.id}/mediciones-satelitales`).send(medicionOptica),
         other.post(`/api/lotes/${owner.lot.id}/clima`).send(clima()),
         other.post(`/api/lotes/${owner.lot.id}/usos`).send({ fecha: '2026-08-20' }),
+        other.get(`/api/lotes/${owner.lot.id}/estado`),
       ];
       for (const response of await Promise.all(paths)) expect(response.status).toBe(404);
     });
@@ -301,6 +302,77 @@ integration('API backend de RODEO', () => {
       expect(history.body.clima).toHaveLength(1);
       expect(history.body.usos).toHaveLength(1);
       expect(history.body.satelite[0].fuente).toBe('sentinel-1');
+    });
+  });
+
+  describe('paginación y filtros de historial', () => {
+    test('pagina mediciones con total y hayMas, y filtra por fuente y fechas', async () => {
+      const { agent, lot } = await prepararLote('pagination_satellite_user');
+      for (const [fuente, fechas] of [['sentinel-2', ['2026-08-16', '2026-08-17', '2026-08-18']], ['sentinel-1', ['2026-08-10']]] as const) {
+        for (const observedAt of fechas) await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...(fuente === 'sentinel-2' ? medicionOptica : medicionRadar), fuente, observedAt });
+      }
+      const primera = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?limit=2&offset=0`);
+      expect(primera.body.mediciones).toHaveLength(2);
+      expect(primera.body.mediciones.map((item: { observedAt: string }) => item.observedAt)).toEqual(['2026-08-18', '2026-08-17']);
+      expect(primera.body.paginacion).toEqual({ limit: 2, offset: 0, total: 4, hayMas: true });
+      const segunda = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?limit=2&offset=2`);
+      expect(segunda.body.mediciones).toHaveLength(2);
+      const soloRadar = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?fuente=sentinel-1&desde=2026-08-09&hasta=2026-08-11`);
+      expect(soloRadar.body.mediciones).toHaveLength(1);
+      expect(soloRadar.body.mediciones[0].fuente).toBe('sentinel-1');
+    });
+
+    test('pagina y filtra usos y clima sin cambiar sus fechas calendario', async () => {
+      const { agent, lot } = await prepararLote('pagination_history_user');
+      for (const fecha of ['2026-08-14', '2026-08-15', '2026-08-16']) await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha });
+      const usos = await agent.get(`/api/lotes/${lot.id}/usos?limit=2&offset=0&desde=2026-08-14&hasta=2026-08-16`);
+      expect(usos.body.usos.map((item: { fecha: string }) => item.fecha)).toEqual(['2026-08-16', '2026-08-15']);
+      expect(usos.body.paginacion).toEqual({ limit: 2, offset: 0, total: 3, hayMas: true });
+      for (const [dia, lluvia] of [['2026-08-16', 1], ['2026-08-17', 2], ['2026-08-18', 3]] as const) {
+        await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: `${dia}T12:00:00.000Z`, dias: [{ fecha: dia, lluviaMm: lluvia, tempMin: 8, tempMax: 20, esPronostico: false }] });
+      }
+      const climaPage = await agent.get(`/api/lotes/${lot.id}/clima?limit=2&offset=1&desde=2026-08-17&hasta=2026-08-18`);
+      expect(climaPage.body.consultas).toHaveLength(1);
+      expect(climaPage.body.paginacion.total).toBe(2);
+      expect(climaPage.body.consultas[0].dias[0].fecha).toMatch(/^2026-08-/);
+    });
+
+    test('rechaza parámetros de paginación, fechas y fuente inválidos', async () => {
+      const { agent, lot } = await prepararLote('invalid_query_user');
+      for (const query of ['limit=0', 'limit=-1', 'limit=abc', 'limit=101', 'offset=-1', 'desde=2026-02-30', 'hasta=2026-01-01&desde=2026-01-02', 'fuente=landsat']) {
+        expect((await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?${query}`)).status).toBe(400);
+      }
+    });
+  });
+
+  describe('estado actual consolidado', () => {
+    test('devuelve sólo la medición óptica, radar, clima y uso más recientes', async () => {
+      const { agent, lot } = await prepararLote('state_user');
+      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, observedAt: '2026-08-10' });
+      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, observedAt: '2026-08-18', puntaje: 90 });
+      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionRadar, observedAt: '2026-08-11' });
+      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionRadar, observedAt: '2026-08-19' });
+      await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: '2026-08-10T12:00:00.000Z' });
+      await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: '2026-08-19T12:00:00.000Z' });
+      await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2026-08-14' });
+      await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2026-08-19' });
+      const response = await agent.get(`/api/lotes/${lot.id}/estado`);
+      expect(response.status).toBe(200);
+      expect(response.body.satelite.optico.observedAt).toBe('2026-08-18');
+      expect(response.body.satelite.optico.puntaje).toBe(90);
+      expect(response.body.satelite.radar.observedAt).toBe('2026-08-19');
+      expect(response.body.satelite.radar).not.toHaveProperty('puntaje');
+      expect(response.body.clima.consultedAt).toBe('2026-08-19T12:00:00.000Z');
+      expect(response.body.uso.ultimoUso).toEqual({ fecha: '2026-08-19', origen: 'manual' });
+      expect(response.body.uso.diasDescanso).toBeGreaterThanOrEqual(0);
+    });
+
+    test('representa correctamente un lote sin historial', async () => {
+      const { agent, lot } = await prepararLote('empty_state_user');
+      const response = await agent.get(`/api/lotes/${lot.id}/estado`);
+      expect(response.body.satelite).toEqual({ optico: null, radar: null });
+      expect(response.body.clima).toBeNull();
+      expect(response.body.uso).toEqual({ ultimoUso: null, diasDescanso: null });
     });
   });
 });
