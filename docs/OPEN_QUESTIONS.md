@@ -119,6 +119,13 @@ Pendiente:
 
 ## Decisiones cerradas de la etapa actual
 
+- La persistencia de mediciones y clima ocurre después de una respuesta exitosa
+  de los servicios externos; un error o `sin-datos` no crea historial falso.
+- La próxima pasada óptica se muestra sólo como estimación aproximada de ~5
+  días, nunca como fecha garantizada.
+- El uso manual conserva todos los registros y el descanso se deriva del uso
+  más reciente.
+
 - El establecimiento y los lotes del usuario autenticado se cargan desde Neon.
 - `localStorage` ya no es fuente ni fallback para esos datos.
 - No se migran automáticamente datos locales antiguos.

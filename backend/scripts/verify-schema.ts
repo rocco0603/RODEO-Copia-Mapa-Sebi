@@ -8,6 +8,7 @@ const tablasEsperadas = [
   'consultas_clima',
   'dias_clima',
   'notificaciones',
+  'usos_lote',
 ];
 
 const result = await pool.query<{ tablename: string }>(

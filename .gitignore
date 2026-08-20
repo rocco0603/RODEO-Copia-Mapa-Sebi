@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .tsbuild/
+coverage/
 *.tsbuildinfo
 
 # Artefactos que tsc dejaba en la raíz (por si quedaron de antes)

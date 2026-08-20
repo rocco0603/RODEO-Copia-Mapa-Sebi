@@ -239,6 +239,21 @@ futuros.
 
 ## Compatibilidad frontend
 
+## Historial implementado
+
+El backend expone, siempre con sesión autenticada y validando pertenencia del
+lote:
+
+- `POST/GET /api/lotes/:id/mediciones-satelitales`;
+- `POST/GET /api/lotes/:id/clima`;
+- `POST/GET /api/lotes/:id/usos`;
+- `GET /api/lotes/:id/historial`.
+
+Las mediciones satelitales usan upsert por `(lote_id, fuente, observed_at)`.
+Sentinel-1 y Sentinel-2 se guardan en filas separadas y los campos que no
+corresponden quedan `NULL`. Sólo se persisten resultados exitosos. Las
+consultas de clima y sus días se insertan en una transacción.
+
 ## Estado real de integración
 
 El estado actual ya conecta estos contratos al mapa: establecimiento y lotes

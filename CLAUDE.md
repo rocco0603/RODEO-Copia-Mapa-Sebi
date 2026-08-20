@@ -73,6 +73,11 @@ Cada observación satelital real y cada consulta de clima deben poder persistirs
 
 ## Seguridad
 
+La persistencia histórica debe guardar únicamente datos reales recibidos de
+Copernicus/Open-Meteo. Sentinel-1 y Sentinel-2 permanecen separados; campos no
+aplicables quedan `NULL`. No agregar alertas, recomendaciones, GPS ni ML en
+esta etapa.
+
 - username único;
 - contraseñas hasheadas, nunca planas;
 - secretos en servidor / `.env` gitignored;

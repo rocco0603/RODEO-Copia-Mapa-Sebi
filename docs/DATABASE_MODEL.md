@@ -262,6 +262,23 @@ Los tipos finales no están cerrados. No construir una lista rígida todavía.
 
 ## Integridad geométrica
 
+## 8. `usos_lote`
+
+Tabla histórica mínima para registrar usos manuales del lote sin implementar
+jornadas, ganado ni GPS:
+
+```text
+id          UUID PK
+lote_id     UUID NOT NULL FK -> lotes(id) ON DELETE RESTRICT
+fecha       DATE NOT NULL
+origen      TEXT NOT NULL DEFAULT 'manual'
+created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+
+La migración `002_lote_usos.sql` agrega esta tabla y su índice por lote/fecha.
+Los días de descanso se calculan en cada lectura usando la fecha más reciente;
+no se persiste un contador fijo.
+
 La base guarda GeoJSON; la validación geométrica se hace en la aplicación/backend usando el mismo criterio del frontend.
 
 Reglas mínimas:

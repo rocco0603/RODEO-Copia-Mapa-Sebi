@@ -35,6 +35,7 @@ interface SidebarProps {
   onLogout: () => void;
   /** Panel de clima; se muestra en su propia sección. */
   panelClima?: ReactNode;
+  panelLote?: ReactNode;
   /** Panel de condición satelital; se muestra en su propia sección. */
   panelCondicion?: ReactNode;
 }
@@ -75,6 +76,7 @@ export default function Sidebar({
   usuarioNombre,
   onLogout,
   panelClima,
+  panelLote,
   panelCondicion,
 }: SidebarProps) {
   const [tab, setTab] = useState<Tab>("lotes");
@@ -312,6 +314,7 @@ export default function Sidebar({
                     );
                   })}
                 </ul>
+                {panelLote}
               </div>
             )}
 

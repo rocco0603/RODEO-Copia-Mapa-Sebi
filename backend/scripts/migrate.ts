@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { pool } from '../src/db/pool.js';
@@ -7,16 +7,22 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const migrationDirectory = scriptDirectory.endsWith('dist\\scripts') || scriptDirectory.endsWith('dist/scripts')
   ? '../../migrations'
   : '../migrations';
-const migrationPath = resolve(scriptDirectory, migrationDirectory, '001_initial_schema.sql');
+const migrationPath = resolve(scriptDirectory, migrationDirectory);
 
 try {
-  const sql = await readFile(migrationPath, 'utf8');
+  const files = (await readdir(migrationPath))
+    .filter((file) => /^\d+_.+\.sql$/.test(file))
+    .sort();
+  if (files.length === 0) throw new Error('No se encontraron migraciones SQL.');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(sql);
+    for (const file of files) {
+      await client.query(await readFile(resolve(migrationPath, file), 'utf8'));
+      console.log(`Migración aplicada: ${file}`);
+    }
     await client.query('COMMIT');
-    console.log('Migración 001 aplicada correctamente.');
+    console.log('Migraciones aplicadas correctamente.');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

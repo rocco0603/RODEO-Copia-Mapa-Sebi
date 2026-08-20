@@ -12,6 +12,12 @@
     "test:smoke": "node dist/scripts/smoke.js",
     "test:smoke:list": "node dist/scripts/list-smoke-users.js",
     "test:smoke:cleanup-user": "node dist/scripts/cleanup-user.js",
+    "test": "npm run test:typecheck && npm run test:unit && npm run test:integration",
+    "test:typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -28,7 +34,11 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.11.10",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.11"
   }
 }

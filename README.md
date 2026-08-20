@@ -273,6 +273,10 @@ olvidados:
 
 ## Estado implementado: onboarding y datos del mapa
 
+La persistencia histórica de Copernicus y Open-Meteo se realiza ahora en Neon
+después de respuestas exitosas, sin mover todavía esas consultas al backend.
+También existe historial de uso manual y descanso derivado por lote.
+
 El onboarding visual ahora reutiliza el mapa existente en dos pasos: creación
 del establecimiento y creación del primer lote. Cada operación se guarda en
 PostgreSQL/Neon mediante APIs autenticadas; el backend asigna IDs y número de
@@ -293,3 +297,30 @@ frontend ya está conectado a la autenticación; `localStorage` sólo continúa
 temporalmente para los datos del mapa.
 
 La guía de pruebas manuales está en [docs/INSOMNIA_TESTING.md](docs/INSOMNIA_TESTING.md).
+
+## Tests automáticos del backend
+
+El backend usa Vitest para los tests unitarios y Supertest para probar la app
+Express sin levantar `localhost:3001`.
+
+```bash
+cd backend
+npm.cmd test
+```
+
+También están disponibles:
+
+```bash
+npm.cmd run test:unit          # no requiere base de datos
+npm.cmd run test:integration   # requiere TEST_DATABASE_URL
+npm.cmd run test:watch
+npm.cmd run test:coverage
+```
+
+Los tests de integración ejecutan las migraciones sobre una base separada y
+limpian sus tablas entre tests. Exigen `TEST_DATABASE_URL`; nunca usan
+`DATABASE_URL` como fallback y rechazan explícitamente que ambas URLs sean
+iguales. Configurá `TEST_DATABASE_URL` sólo con una base o branch de PostgreSQL
+descartable creado para testing, sin incluir la URL en el repositorio. Si no
+está configurada, la integración se omite de forma segura y los tests unitarios
+siguen ejecutándose.

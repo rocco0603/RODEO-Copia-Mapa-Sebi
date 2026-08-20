@@ -221,6 +221,11 @@ soft delete, numeración histórica y finalización irreversible del onboarding.
 
 ## Estado real de la etapa de onboarding y persistencia
 
+La persistencia histórica satelital, climática y de uso manual del lote está
+implementada sin mover todavía Copernicus ni Open-Meteo al backend. La
+migración adicional es `002_lote_usos.sql`; `001_initial_schema.sql` no fue
+modificada.
+
 Completado el onboarding visual sobre el mapa existente y la conexión de
 establecimiento/lotes a PostgreSQL/Neon. El frontend carga los datos antes de
 mostrar el mapa, recupera un onboarding interrumpido y no usa `localStorage`

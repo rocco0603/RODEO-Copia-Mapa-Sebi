@@ -3,6 +3,7 @@ import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { establecimientoRouter } from './routes/establecimiento.js';
 import { lotesRouter } from './routes/lotes.js';
+import { historialRouter } from './routes/historial.js';
 import { errorResponse } from './http/errors.js';
 
 export const app = express();
@@ -12,6 +13,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/establecimiento', establecimientoRouter);
 app.use('/api/lotes', lotesRouter);
+app.use('/api/lotes', historialRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
