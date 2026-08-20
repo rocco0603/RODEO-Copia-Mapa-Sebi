@@ -5,6 +5,7 @@ import "leaflet-draw";
 import type { Establecimiento, Lote, PolygonFeature } from "../types";
 
 type DrawTarget = "establecimiento" | "lote" | null;
+type EditTarget = { type: "establecimiento" } | { type: "lote"; id: string } | null;
 
 export interface MapEngineHandle {
   startDrawEstablecimiento(): void;
@@ -13,6 +14,9 @@ export interface MapEngineHandle {
   startEditBoundary(): void;
   saveEditBoundary(): void;
   cancelEditBoundary(): void;
+  startEditLote(loteId: string): void;
+  saveEditLote(): void;
+  cancelEditLote(): void;
   flyTo(polygon: PolygonFeature): void;
 }
 
@@ -30,6 +34,7 @@ interface MapEngineProps {
   onEstablecimientoDrawn: (feature: PolygonFeature) => void;
   onLoteDrawn: (feature: PolygonFeature) => void;
   onBoundaryEdited: (feature: PolygonFeature) => void;
+  onLoteEdited: (loteId: string, feature: PolygonFeature) => void;
   onSelectLote: (id: string) => void;
 }
 
@@ -61,6 +66,11 @@ function loteStyle(
   };
 }
 
+function createEditHandler(map: L.Map, layer: L.Polygon): L.EditToolbar.Edit {
+  const featureGroup = new L.FeatureGroup([layer]);
+  return new L.EditToolbar.Edit(map as unknown as L.DrawMap, { featureGroup });
+}
+
 const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine(
   props,
   ref,
@@ -70,6 +80,8 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
   const lotesLayerGroupRef = useRef<L.LayerGroup>(L.layerGroup());
   const drawHandlerRef = useRef<L.Draw.Polygon | null>(null);
   const editHandlerRef = useRef<L.EditToolbar.Edit | null>(null);
+  const loteLayersRef = useRef<Record<string, L.Polygon>>({});
+  const editTargetRef = useRef<EditTarget>(null);
   const pendingTargetRef = useRef<DrawTarget>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -119,6 +131,7 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
   useEffect(() => {
     const group = lotesLayerGroupRef.current;
     group.clearLayers();
+    loteLayersRef.current = {};
     for (const lote of props.lotesVisibles) {
       const selected = lote.id === props.selectedLoteId;
       const condicion = props.condicionPorLote[lote.id];
@@ -129,6 +142,8 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
       layer.bindTooltip(condicion ? `${base}<br>${condicion.etiqueta}` : base);
       layer.on("click", () => propsRef.current.onSelectLote(lote.id));
       layer.addTo(group);
+      const polygonLayer = layer.getLayers()[0];
+      if (polygonLayer instanceof L.Polygon) loteLayersRef.current[lote.id] = polygonLayer;
     }
   }, [props.lotesVisibles, props.selectedLoteId, props.condicionPorLote]);
 
@@ -180,10 +195,9 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
       startEditBoundary() {
         const layer = establecimientoLayerRef.current;
         if (!layer) return;
-        const fg = new L.FeatureGroup([layer]);
-        const handler = new L.EditToolbar.Edit(map as unknown as L.DrawMap, {
-          featureGroup: fg,
-        });
+        editHandlerRef.current?.disable();
+        const handler = createEditHandler(map, layer);
+        editTargetRef.current = { type: "establecimiento" };
         editHandlerRef.current = handler;
         handler.enable();
       },
@@ -192,6 +206,7 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
         editHandlerRef.current?.save();
         editHandlerRef.current?.disable();
         editHandlerRef.current = null;
+        editTargetRef.current = null;
         if (layer) {
           const feature = layer.toGeoJSON() as PolygonFeature;
           propsRef.current.onBoundaryEdited(feature);
@@ -201,6 +216,35 @@ const MapEngine = forwardRef<MapEngineHandle, MapEngineProps>(function MapEngine
         editHandlerRef.current?.revertLayers();
         editHandlerRef.current?.disable();
         editHandlerRef.current = null;
+        editTargetRef.current = null;
+      },
+      startEditLote(loteId: string) {
+        editHandlerRef.current?.disable();
+        editHandlerRef.current = null;
+        const layer = loteLayersRef.current[loteId];
+        if (!layer) return;
+        const handler = createEditHandler(map, layer);
+        editTargetRef.current = { type: "lote", id: loteId };
+        editHandlerRef.current = handler;
+        handler.enable();
+      },
+      saveEditLote() {
+        const target = editTargetRef.current;
+        const loteId = target?.type === "lote" ? target.id : null;
+        const layer = loteId ? loteLayersRef.current[loteId] : undefined;
+        editHandlerRef.current?.save();
+        editHandlerRef.current?.disable();
+        editHandlerRef.current = null;
+        editTargetRef.current = null;
+        if (loteId && layer) {
+          propsRef.current.onLoteEdited(loteId, layer.toGeoJSON() as PolygonFeature);
+        }
+      },
+      cancelEditLote() {
+        editHandlerRef.current?.revertLayers();
+        editHandlerRef.current?.disable();
+        editHandlerRef.current = null;
+        editTargetRef.current = null;
       },
       flyTo(polygon: PolygonFeature) {
         const bounds = L.geoJSON(polygon).getBounds();

@@ -59,14 +59,14 @@ El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 
 ### ESTADO TEMPORAL IMPORTANTE
 
-La autenticación y el estado de onboarding ya usan el backend/PostgreSQL de Neon, pero el establecimiento y los lotes que muestra el mapa todavía se cargan y guardan en `localStorage`. Por eso un usuario puede figurar con onboarding completo en Neon y no ver sus geometrías en otro navegador que no tenga ese `localStorage`.
+La autenticación, el onboarding y los datos de establecimiento/lotes usan el
+backend/PostgreSQL de Neon. No se consulta `localStorage` para esos datos.
 
 ### EN IMPLEMENTACIÓN / SIGUIENTE ETAPA
 
-- onboarding visual real;
-- conectar el establecimiento y los lotes del mapa con sus APIs privadas;
-- convertir Neon/PostgreSQL en la fuente real de esos datos;
-- retirar gradualmente `localStorage`, manteniendo el mapa y su comportamiento actual.
+- persistencia backend de Copernicus/Open-Meteo;
+- historial y notificaciones en UI;
+- deploy y configuración final de CORS/cookies, manteniendo el mapa actual.
 
 ### PENDIENTE Y FUERA DE ALCANCE
 
@@ -158,7 +158,7 @@ vite-plugin-copernicus.ts   proxy de Node para Sentinel Hub (Copernicus)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 
 src/
-  types.ts, geo.ts, storage.ts   estado del establecimiento/lotes (localStorage)
+  types.ts, geo.ts, api/rodeo.ts  estado y persistencia API del establecimiento/lotes
   App.tsx                        raíz: estado, orquesta condición + clima
   components/
     MapView.tsx, MapEngine.tsx   mapa Leaflet, dibujo/edición de polígonos
@@ -244,10 +244,9 @@ olvidados:
 2. **Historial de ocupación / rotación de pastoreo** — depende del punto 1.
    Más adelante se evalúa un modelo de ML para sugerir cuánto descansar cada
    lote (ver por qué el ML está pausado arriba).
-3. **Persistencia real / multi-dispositivo** — hoy todo vive en
-   `localStorage` del navegador (`storage.ts`), un solo dispositivo, sin
-   backup. Lo resuelve el backend de este repositorio de forma incremental,
-   manteniendo el frontend y `localStorage` durante la transición.
+3. **Persistencia real / multi-dispositivo** — establecimiento y lotes ya viven
+   en PostgreSQL/Neon y se cargan por API autenticada. La persistencia histórica
+   de satélite y clima todavía queda para etapas posteriores.
 4. **Alertas / análisis programado** — considerado irrelevante hasta que
    exista la persistencia y autenticación del backend; la automatización de
    chequeos periódicos queda para una etapa posterior.
@@ -271,6 +270,22 @@ olvidados:
   todavía. Si en algún momento se habilita esa herramienta, vale la pena
   revisar el detalle visual con calma.
 ## Autenticación y pruebas del backend
+
+## Estado implementado: onboarding y datos del mapa
+
+El onboarding visual ahora reutiliza el mapa existente en dos pasos: creación
+del establecimiento y creación del primer lote. Cada operación se guarda en
+PostgreSQL/Neon mediante APIs autenticadas; el backend asigna IDs y número de
+lote.
+
+El frontend autenticado carga `GET /api/establecimiento` y, si corresponde,
+`GET /api/lotes` antes de montar la aplicación. Ya no usa `loadState()` ni
+`saveState()` como fuente ni migra automáticamente datos viejos de
+`localStorage`. Renombrar, activar/desactivar, borrar lotes y editar el
+establecimiento esperan la respuesta del backend.
+
+La eliminación de establecimientos está deshabilitada porque todavía no hay
+una semántica backend segura para esa operación.
 
 El backend actual usa `AUTH_JWT_SECRET` en `backend/.env`, JWT en cookie
 HttpOnly `rodeo_session`, y APIs privadas de establecimiento y lotes. El

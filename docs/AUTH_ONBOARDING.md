@@ -125,9 +125,9 @@ de contraseña es 8 caracteres.
 
 El estado de autenticación ya está integrado en `App` y la aplicación del mapa
 vive en `RodeoApp`, evitando cambios en el orden de hooks entre login y sesión.
-El onboarding visual completo todavía no está implementado. Además, aunque el
-usuario y `onboarding_completed_at` vienen del backend, establecimiento y lotes
-del mapa siguen dependiendo temporalmente de `localStorage`.
+El onboarding visual completo ya está implementado dentro del mapa. El usuario,
+`onboarding_completed_at`, establecimiento y lotes vienen del backend; no se
+usa `localStorage` para esos datos.
 
 El frontend consulta `GET /api/auth/me` antes de renderizar el mapa. Sin sesión
 muestra login/registro; con onboarding pendiente muestra una pantalla temporal
@@ -135,6 +135,13 @@ de configuración; con onboarding completo muestra la aplicación actual. Login,
 registro y logout usan `credentials: "include"` para conservar la cookie.
 
 ## Validaciones
+
+## Estado implementado en el frontend
+
+El onboarding visual se realiza dentro de la aplicación del mapa. El frontend
+carga establecimiento y lotes desde sus APIs privadas antes de mostrar la
+interfaz, y después del primer lote actualiza `auth/me` sin requerir F5.
+El flujo no usa ni migra automáticamente el `localStorage` anterior.
 
 Como mínimo:
 

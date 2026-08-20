@@ -31,13 +31,20 @@ No se debe rehacer el mapa. Se debe conservar la arquitectura actual y conectarl
 
 ## Qué deja de ser definitivo
 
-Actualmente establecimiento y lotes se guardan en `localStorage`. Eso fue correcto mientras no existía backend, pero deja de ser la fuente definitiva de verdad.
+Actualmente establecimiento y lotes se guardan en PostgreSQL/Neon mediante las
+APIs privadas del backend. `localStorage` ya no es fuente de verdad.
 
-La fuente definitiva será PostgreSQL. `localStorage` puede mantenerse temporalmente como compatibilidad/migración durante la implementación, pero el objetivo es que un usuario pueda iniciar sesión desde otro dispositivo y recuperar su establecimiento, lotes e historial desde el backend.
+La fuente definitiva es PostgreSQL. No se migran automáticamente datos locales
+antiguos; un usuario recupera establecimiento y lotes desde cualquier
+dispositivo mediante su sesión autenticada.
 
 ## Nueva arquitectura objetivo
 
 ## Estado real de cierre de etapa
+
+La etapa de onboarding visual y persistencia de establecimiento/lotes ya fue
+implementada. El frontend usa Neon como fuente real y no consulta `localStorage`
+para esos datos.
 
 La base de backend y autenticación ya está implementada: PostgreSQL en Neon,
 registro/login/logout, `auth/me`, bcrypt, JWT en cookie HttpOnly, APIs privadas

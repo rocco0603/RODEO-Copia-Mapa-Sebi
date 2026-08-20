@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { Establecimiento, Lote } from "../types";
 import { areaHectareas } from "../geo";
 
@@ -12,6 +12,9 @@ interface SidebarProps {
   selectedLoteId: string | null;
   drawMode: DrawMode;
   editingBoundary: boolean;
+  editingLoteId: string | null;
+  onboardingStep?: 1 | 2;
+  guardando?: boolean;
   onToggleShowInactivos: () => void;
   onSelectLote: (id: string) => void;
   onStartDrawEstablecimiento: () => void;
@@ -20,6 +23,9 @@ interface SidebarProps {
   onStartEditBoundary: () => void;
   onSaveEditBoundary: () => void;
   onCancelEditBoundary: () => void;
+  onStartEditLote: (id: string) => void;
+  onSaveEditLote: () => void;
+  onCancelEditLote: () => void;
   onRenameEstablecimiento: () => void;
   onDeleteEstablecimiento: () => void;
   onRenameLote: (id: string) => void;
@@ -47,6 +53,9 @@ export default function Sidebar({
   selectedLoteId,
   drawMode,
   editingBoundary,
+  editingLoteId,
+  onboardingStep,
+  guardando = false,
   onToggleShowInactivos,
   onSelectLote,
   onStartDrawEstablecimiento,
@@ -55,6 +64,9 @@ export default function Sidebar({
   onStartEditBoundary,
   onSaveEditBoundary,
   onCancelEditBoundary,
+  onStartEditLote,
+  onSaveEditLote,
+  onCancelEditLote,
   onRenameEstablecimiento,
   onDeleteEstablecimiento,
   onRenameLote,
@@ -67,6 +79,10 @@ export default function Sidebar({
 }: SidebarProps) {
   const [tab, setTab] = useState<Tab>("lotes");
 
+  useEffect(() => {
+    if (selectedLoteId) setTab("lotes");
+  }, [selectedLoteId]);
+
   const lotesVisibles = showInactivos ? lotes : lotes.filter((l) => l.activo);
   const superficieTotalHa = lotes
     .filter((l) => l.activo)
@@ -77,6 +93,22 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <h1 className="app-title">RODEO</h1>
+
+      {onboardingStep && (
+        <div className="panel onboarding-progress">
+          <p className="setup-kicker">Configuración inicial</p>
+          <p><strong>Paso {onboardingStep} de 2</strong></p>
+          <p className="setup-muted">{onboardingStep === 1 ? "○ Establecimiento" : "✓ Establecimiento"}</p>
+          <p className="setup-muted">{onboardingStep === 2 ? "● Primer lote" : "○ Primer lote"}</p>
+          {onboardingStep === 1 && <p>Dibujá el límite de tu establecimiento y asignale un nombre.</p>}
+          {onboardingStep === 2 && <>
+            <p>Ahora dibujá tu primer lote dentro del establecimiento.</p>
+            <button className="btn btn-primary" onClick={onStartDrawLote} disabled={guardando || drawMode !== "idle"}>
+              {drawMode === "lote" ? "Dibujando lote..." : "Dibujar primer lote"}
+            </button>
+          </>}
+        </div>
+      )}
 
       {!establecimiento && (
         <div className="panel">
@@ -100,7 +132,7 @@ export default function Sidebar({
       {establecimiento && (
         <>
           <nav className="sidebar-tabs" role="tablist" aria-label="Secciones">
-            {TABS.map((t) => (
+            {TABS.filter((t) => !onboardingStep || t.id === "lotes").map((t) => (
               <button
                 key={t.id}
                 role="tab"
@@ -158,7 +190,7 @@ export default function Sidebar({
                     <button
                       className="btn btn-danger"
                       onClick={onDeleteEstablecimiento}
-                      disabled={tieneLotes}
+                      disabled
                       title={
                         tieneLotes
                           ? "Eliminá todos los lotes antes de borrar el establecimiento"
@@ -230,7 +262,22 @@ export default function Sidebar({
                         <div className="lote-item-sub">
                           <span>{ha.toFixed(2)} ha</span>
                           <div className="lote-item-actions">
+                            {selected && editingLoteId === lote.id ? (
+                              <div className="button-row">
+                                <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); onSaveEditLote(); }} disabled={guardando}>
+                                  Guardar límite
+                                </button>
+                                <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); onCancelEditLote(); }} disabled={guardando}>
+                                  Cancelar
+                                </button>
+                              </div>
+                            ) : selected && !editingLoteId ? (
+                              <button className="btn-link" onClick={(e) => { e.stopPropagation(); onStartEditLote(lote.id); }} disabled={guardando}>
+                                Editar límite
+                              </button>
+                            ) : null}
                             <button
+                              hidden={selected && editingLoteId === lote.id}
                               className="btn-link"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -240,6 +287,7 @@ export default function Sidebar({
                               Apodo
                             </button>
                             <button
+                              hidden={selected && editingLoteId === lote.id}
                               className="btn-link"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -249,6 +297,7 @@ export default function Sidebar({
                               {lote.activo ? "Desactivar" : "Activar"}
                             </button>
                             <button
+                              hidden={selected && editingLoteId === lote.id}
                               className="btn-link btn-link-danger"
                               onClick={(e) => {
                                 e.stopPropagation();

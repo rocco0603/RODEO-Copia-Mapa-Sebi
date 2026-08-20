@@ -29,8 +29,7 @@ Decidido:
 - PostgreSQL remoto es Neon para el estado actual.
 - Copernicus es opcional en desarrollo y usa `COPERNICUS_CLIENT_ID`/
   `COPERNICUS_CLIENT_SECRET` sin exponer secretos al navegador.
-- La autenticación ya usa Neon, pero los datos de mapa aún usan `localStorage`
-  hasta la siguiente etapa de conexión de establecimiento y lotes.
+- La autenticación y los datos de mapa ya usan Neon mediante APIs privadas.
 
 Lo que sigue abierto es el deployment final, incluyendo dominio, CORS y
 atributos definitivos de cookies.
@@ -82,7 +81,7 @@ Decidido:
 
 Pendiente:
 
-- edición geométrica directa de lotes: el mapa actual no la expone todavía de la misma forma que el límite del establecimiento;
+- edición geométrica directa de lotes ya implementada mediante `PATCH /api/lotes/:id`;
 - si se agregará historial de cambios geométricos en una etapa futura.
 
 ## Lotes
@@ -117,6 +116,16 @@ Pendiente:
 - CI/CD.
 
 ## Ganado y GPS
+
+## Decisiones cerradas de la etapa actual
+
+- El establecimiento y los lotes del usuario autenticado se cargan desde Neon.
+- `localStorage` ya no es fuente ni fallback para esos datos.
+- No se migran automáticamente datos locales antiguos.
+- El onboarding visual reutiliza el mapa y recupera el paso pendiente si ya
+  existe establecimiento.
+- La eliminación de establecimiento queda deshabilitada hasta definir una
+  semántica backend que preserve relaciones e historial.
 
 Fuera de alcance por ahora.
 

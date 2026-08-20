@@ -6,6 +6,8 @@ export interface Establecimiento {
   id: string;
   nombre: string;
   polygon: PolygonFeature;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Lote {
@@ -14,11 +16,6 @@ export interface Lote {
   apodo: string;
   polygon: PolygonFeature;
   activo: boolean;
-  createdAt: number;
-}
-
-export interface RodeoState {
-  establecimiento: Establecimiento | null;
-  lotes: Lote[];
-  nextLoteNumero: number;
+  createdAt: string;
+  updatedAt: string;
 }

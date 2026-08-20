@@ -34,9 +34,8 @@ El radar Sentinel-1 nunca se mezcla con la óptica Sentinel-2 en el mismo puntaj
 - onboarding backend irreversible; la pantalla visual completa sigue pendiente;
 - mapa, Copernicus y Open-Meteo existentes.
 
-El establecimiento y los lotes que muestra el mapa todavía usan `localStorage`.
-La conexión de esas operaciones a las APIs y la persistencia histórica de
-satélite/clima son etapas posteriores.
+La persistencia histórica de satélite/clima y sus APIs backend son etapas
+posteriores.
 
 ## Qué sigue pausado
 
@@ -59,12 +58,14 @@ Regla nueva importante: una edición del establecimiento no puede guardarse si d
 
 ## Persistencia
 
-Estado actual: autenticación y estado de onboarding ya usan el backend y
-PostgreSQL/Neon, mientras que el establecimiento y los lotes que renderiza el
-mapa todavía dependen de `localStorage`. La migración de esos datos a las APIs
-privadas es la siguiente etapa.
+Estado actual: autenticación, onboarding, establecimiento y lotes usan el
+backend y PostgreSQL/Neon. El frontend carga esos datos antes de montar el
+mapa y no usa `localStorage` como fuente ni fallback; los datos locales viejos
+no se migran automáticamente.
 
-`localStorage` es provisional. La fuente definitiva será PostgreSQL. Migrar de forma incremental, no borrar de golpe la lógica actual antes de tener equivalencia funcional vía API.
+La fuente definitiva de establecimiento y lotes es PostgreSQL. No migrar
+automáticamente datos locales antiguos ni reintroducir `localStorage` como
+fallback silencioso.
 
 Los lotes usan soft delete para conservar historial.
 

@@ -138,7 +138,7 @@ Permite como mínimo:
 
 - cambiar apodo;
 - activar/desactivar;
-- cambiar geometría cuando se implemente edición de lote.
+- cambiar geometría; el backend vuelve a validar contención y no solapamiento.
 
 La geometría vuelve a validarse.
 
@@ -241,9 +241,12 @@ futuros.
 
 ## Estado real de integración
 
+El estado actual ya conecta estos contratos al mapa: establecimiento y lotes
+se cargan desde Neon y las mutaciones esperan el DTO devuelto por el backend.
+`localStorage` no se usa como fallback y sus datos antiguos no se importan.
+
 El frontend ya está conectado a `auth/me`, registro, login y logout. En cambio,
-el mapa todavía obtiene establecimiento y lotes desde `localStorage`; los
-contratos privados de esas APIs están implementados en backend y serán la
-fuente efectiva en la siguiente etapa de integración del mapa.
+el mapa obtiene establecimiento y lotes desde estos contratos privados de API;
+`localStorage` no participa en esa carga.
 
 Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existentes (`Establecimiento`, `Lote`, `ResultadoLote`, `ResultadoClimaLote`) para minimizar cambios en componentes de mapa y paneles.

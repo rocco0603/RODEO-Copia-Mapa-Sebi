@@ -21,6 +21,7 @@ interface MapViewProps {
   onEstablecimientoDrawn: (feature: PolygonFeature) => void;
   onLoteDrawn: (feature: PolygonFeature) => void;
   onBoundaryEdited: (feature: PolygonFeature) => void;
+  onLoteEdited: (loteId: string, feature: PolygonFeature) => void;
   onSelectLote: (id: string) => void;
 }
 
@@ -53,6 +54,7 @@ const MapView = forwardRef<MapEngineHandle, MapViewProps>(function MapView(props
         onEstablecimientoDrawn={props.onEstablecimientoDrawn}
         onLoteDrawn={props.onLoteDrawn}
         onBoundaryEdited={props.onBoundaryEdited}
+        onLoteEdited={props.onLoteEdited}
         onSelectLote={props.onSelectLote}
       />
     </MapContainer>

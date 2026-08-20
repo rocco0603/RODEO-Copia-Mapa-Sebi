@@ -111,15 +111,15 @@ Si cierra antes de terminar, el siguiente login vuelve al onboarding.
 
 Una vez completado, nunca relock automático por quedarse sin lotes.
 
-## Fase 5 — reemplazar `localStorage`
+## Fase 5 — reemplazar `localStorage` (completada)
 
 ## Estado real al cierre de la etapa actual
 
 La autenticación y el backend de establecimiento/lotes ya están implementados,
 y el frontend ya resuelve loading, login, registro, sesión persistente y logout.
-El onboarding visual todavía es una pantalla de transición. El mapa continúa
-usando `localStorage` para establecimiento y lotes; por lo tanto esta Fase 5
-es la siguiente etapa efectiva, no una tarea ya terminada.
+El onboarding visual y la carga de establecimiento/lotes desde API ya están
+implementados. El frontend no usa `localStorage` para esos datos ni importa
+automáticamente su contenido anterior.
 
 Migrar gradualmente:
 
@@ -132,7 +132,8 @@ Cuando la API sea la fuente definitiva, retirar `storage.ts` o dejar únicamente
 
 ## Fase 6 — corrección de edición de establecimiento
 
-Actualmente una edición puede guardarse aunque deje lotes afuera. Cambiar regla:
+La edición del establecimiento y de los lotes ya pasa por el backend. Mantener
+la regla:
 
 - validar todos los lotes no eliminados;
 - si alguno queda afuera, no persistir la edición;
@@ -217,6 +218,17 @@ GeoJSON `Feature<Polygon>`, contención, superposición, pertenencia al usuario,
 soft delete, numeración histórica y finalización irreversible del onboarding.
 
 ## Definition of done por fase
+
+## Estado real de la etapa de onboarding y persistencia
+
+Completado el onboarding visual sobre el mapa existente y la conexión de
+establecimiento/lotes a PostgreSQL/Neon. El frontend carga los datos antes de
+mostrar el mapa, recupera un onboarding interrumpido y no usa `localStorage`
+como fallback ni migra sus datos automáticamente.
+
+También están conectados creación, renombrado, edición de límite,
+activación/desactivación y soft delete de lotes. La eliminación de
+establecimiento permanece deshabilitada hasta definir su semántica de backend.
 
 Cada fase debe:
 
