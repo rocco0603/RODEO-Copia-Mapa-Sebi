@@ -337,3 +337,10 @@ aceptan `desde` y `hasta`. Las fechas `DATE` se expresan siempre como
 óptica, el último radar, el clima más reciente y el último uso. No consulta
 servicios externos, no calcula un score nuevo y no recomienda lotes: es una
 capa de datos para futuras etapas de análisis.
+
+También existe `GET /api/lotes/estado`, que devuelve el mismo DTO consolidado
+para todos los lotes activos del usuario, ordenados por número. Con
+`?incluirInactivos=true` incluye los inactivos no eliminados; los soft-deleted
+nunca aparecen. Por ahora no pagina esta colección porque el establecimiento
+tiene una cantidad razonable de lotes y el endpoint está pensado como una
+lectura completa para una futura etapa de decisión.

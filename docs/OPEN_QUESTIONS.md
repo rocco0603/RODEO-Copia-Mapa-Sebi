@@ -125,6 +125,10 @@ objetiva y no representa el futuro modelo/recomendador.
 Pendiente: definir, en una etapa posterior, qué reglas agronómicas consumirán
 este DTO y cómo se calibrarán sin confundirlo con el scoring provisional.
 
+Implementado: `GET /api/lotes/estado` devuelve la colección completa de lotes
+activos, con opción explícita de incluir inactivos no eliminados. No se pagina
+por ahora debido al límite conceptual actual de lotes por establecimiento.
+
 ## Ganado y GPS
 
 ## Decisiones cerradas de la etapa actual

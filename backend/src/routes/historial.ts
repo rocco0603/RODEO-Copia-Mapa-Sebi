@@ -3,8 +3,9 @@ import { pool } from '../db/pool.js';
 import { requiereAutenticacion } from '../auth/middleware.js';
 import { asyncHandler } from '../http/async-handler.js';
 import { ApiError } from '../http/errors.js';
-import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp, hoyCalendario } from '../date.js';
+import { esFechaCalendario } from '../date.js';
 import { leerPaginacion, leerRangoCalendario, type Paginacion, type RangoCalendario } from '../http/query.js';
+import { obtenerEstadosDeLotes } from '../services/estado-lotes.js';
 
 export const historialRouter = Router();
 historialRouter.use(requiereAutenticacion);
@@ -199,58 +200,10 @@ historialRouter.get('/:id/usos', asyncHandler(async (req, res) => {
   res.json({ usos: result.rows.map((uso) => ({ id: uso.id, loteId: uso.lote_id, fecha: uso.fecha, origen: uso.origen, createdAt: uso.created_at })), paginacion: { ...paginacion, total: totalNumber, hayMas: paginacion.offset + result.rows.length < totalNumber } });
 }));
 
-function estadisticas(row: Record<string, unknown>, prefijo: string) {
-  return { media: row[`${prefijo}_media`], mediana: row[`${prefijo}_mediana`], min: row[`${prefijo}_min`], max: row[`${prefijo}_max`], desvio: row[`${prefijo}_desvio`] };
-}
-
-function estadoOptico(row: Record<string, unknown>) {
-  const observedAt = row.observed_at as string;
-  return {
-    id: row.id,
-    observedAt,
-    consultedAt: row.consulted_at,
-    diasDesdeObservacion: Math.max(0, diasEntreFechas(observedAt, hoyCalendario())),
-    coberturaValida: row.cobertura_valida,
-    ndvi: estadisticas(row, 'ndvi'),
-    ndmi: estadisticas(row, 'ndmi'),
-    ndwi: estadisticas(row, 'ndwi'),
-    evi: estadisticas(row, 'evi'),
-    puntaje: row.puntaje,
-    categoria: row.categoria,
-  };
-}
-
-function estadoRadar(row: Record<string, unknown>) {
-  const observedAt = row.observed_at as string;
-  return { id: row.id, observedAt, consultedAt: row.consulted_at, diasDesdeObservacion: Math.max(0, diasEntreFechas(observedAt, hoyCalendario())), rvi: estadisticas(row, 'rvi') };
-}
-
 historialRouter.get('/:id/estado', asyncHandler(async (req, res) => {
   const loteId = await loteDelUsuario(req);
-  const lote = await pool.query('SELECT id, numero, apodo, activo FROM lotes WHERE id = $1', [loteId]);
-  const [optico, radar, consulta, uso] = await Promise.all([
-    pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2 ORDER BY observed_at DESC, consulted_at DESC, id ASC LIMIT 1', [loteId, 'sentinel-2']),
-    pool.query('SELECT * FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2 ORDER BY observed_at DESC, consulted_at DESC, id ASC LIMIT 1', [loteId, 'sentinel-1']),
-    pool.query('SELECT * FROM consultas_clima WHERE lote_id = $1 ORDER BY consulted_at DESC, id ASC LIMIT 1', [loteId]),
-    pool.query('SELECT id, lote_id, fecha, origen, created_at FROM usos_lote WHERE lote_id = $1 ORDER BY fecha DESC, created_at DESC, id ASC LIMIT 1', [loteId]),
-  ]);
-  const consultaActual = consulta.rows[0];
-  const hoy = hoyCalendario();
-  const diaActual = consultaActual ? await pool.query('SELECT fecha, lluvia_mm, temp_min, temp_max, es_pronostico FROM dias_clima WHERE consulta_clima_id = $1 AND fecha = $2::date LIMIT 1', [consultaActual.id, hoy]) : { rows: [] };
-  const usoActual = uso.rows[0];
-  res.json({
-    lote: lote.rows[0],
-    satelite: { optico: optico.rows[0] ? estadoOptico(optico.rows[0]) : null, radar: radar.rows[0] ? estadoRadar(radar.rows[0]) : null },
-    clima: consultaActual ? {
-      consultedAt: consultaActual.consulted_at,
-      horasDesdeConsulta: horasDesdeTimestamp(consultaActual.consulted_at),
-      lluviaUltimos7Dias: consultaActual.lluvia_ultimos_7_dias,
-      lluviaProximosDias: consultaActual.lluvia_proximos_dias,
-      categoria: consultaActual.categoria,
-      hoy: diaActual.rows[0] ? { fecha: diaActual.rows[0].fecha, lluviaMm: diaActual.rows[0].lluvia_mm, tempMin: diaActual.rows[0].temp_min, tempMax: diaActual.rows[0].temp_max, esPronostico: diaActual.rows[0].es_pronostico } : null,
-    } : null,
-    uso: { ultimoUso: usoActual ? { fecha: usoActual.fecha, origen: usoActual.origen } : null, diasDescanso: usoActual ? Math.max(0, diasEntreFechas(usoActual.fecha, hoy)) : null },
-  });
+  const [estado] = await obtenerEstadosDeLotes([loteId]);
+  res.json(estado);
 }));
 
 historialRouter.get('/:id/historial', asyncHandler(async (req, res) => {

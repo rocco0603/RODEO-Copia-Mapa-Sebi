@@ -98,3 +98,8 @@ datos persistidos recientes de satélite, clima y uso. Este endpoint no llama
 servicios externos, no agrega scoring ni recomendaciones y mantiene separados
 Sentinel-1 y Sentinel-2. Las columnas PostgreSQL `DATE` se manejan como
 `YYYY-MM-DD`; los `TIMESTAMPTZ` siguen siendo instantes ISO.
+
+`GET /api/lotes/estado` reutiliza ese mismo armado para todos los lotes del
+establecimiento. Devuelve activos por defecto, acepta `incluirInactivos=true`,
+excluye siempre soft-deleted y ordena por número ascendente. Sus consultas son
+agrupadas por lote para evitar N+1; todavía no se pagina esta colección.

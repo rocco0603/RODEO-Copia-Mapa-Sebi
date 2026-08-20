@@ -374,5 +374,64 @@ integration('API backend de RODEO', () => {
       expect(response.body.clima).toBeNull();
       expect(response.body.uso).toEqual({ ultimoUso: null, diasDescanso: null });
     });
+
+    test('devuelve todos los lotes activos ordenados y conserva datos separados por lote', async () => {
+      const agent = await registrar('bulk_state_user');
+      await crearEstablecimiento(agent);
+      const lote1 = await crearLote(agent, 1, 2);
+      const lote2 = await crearLote(agent, 3, 4);
+      const lote3 = await crearLote(agent, 5, 6);
+      await agent.post(`/api/lotes/${lote1.id}/mediciones-satelitales`).send({ ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.2 } });
+      await agent.post(`/api/lotes/${lote1.id}/clima`).send(clima('manual'));
+      await agent.post(`/api/lotes/${lote1.id}/usos`).send({ fecha: '2026-08-19' });
+      await agent.post(`/api/lotes/${lote2.id}/mediciones-satelitales`).send({ ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.8 } });
+      const response = await agent.get('/api/lotes/estado');
+      expect(response.status).toBe(200);
+      expect(response.body.lotes.map((item: { lote: { numero: number } }) => item.lote.numero)).toEqual([1, 2, 3]);
+      expect(response.body.lotes[0].satelite.optico.ndvi.mediana).toBe(0.2);
+      expect(response.body.lotes[1].satelite.optico.ndvi.mediana).toBe(0.8);
+      expect(response.body.lotes[1].clima).toBeNull();
+      expect(response.body.lotes[2].satelite).toEqual({ optico: null, radar: null });
+      expect(response.body.lotes[2].clima).toBeNull();
+      expect(response.body.lotes[2].uso).toEqual({ ultimoUso: null, diasDescanso: null });
+      expect(lote3.id).toBe(response.body.lotes[2].lote.id);
+    });
+
+    test('filtra inactivos y nunca devuelve soft-deleted', async () => {
+      const agent = await registrar('bulk_inactive_user');
+      await crearEstablecimiento(agent);
+      const activo = await crearLote(agent, 1, 2);
+      const inactivo = await crearLote(agent, 3, 4);
+      await agent.patch(`/api/lotes/${inactivo.id}`).send({ activo: false });
+      expect((await agent.get('/api/lotes/estado')).body.lotes.map((item: { lote: { id: string } }) => item.lote.id)).toEqual([activo.id]);
+      const ambos = await agent.get('/api/lotes/estado?incluirInactivos=true');
+      expect(ambos.body.lotes.map((item: { lote: { id: string } }) => item.lote.id)).toEqual([activo.id, inactivo.id]);
+      await agent.delete(`/api/lotes/${inactivo.id}`);
+      expect((await agent.get('/api/lotes/estado?incluirInactivos=true')).body.lotes.map((item: { lote: { id: string } }) => item.lote.id)).toEqual([activo.id]);
+    });
+
+    test('aísla el estado consolidado entre usuarios y valida incluirInactivos', async () => {
+      const owner = await prepararLote('bulk_owner_user');
+      const other = await prepararLote('bulk_other_user');
+      const foreign = await other.agent.get('/api/lotes/estado');
+      expect(foreign.body.lotes).toHaveLength(1);
+      expect(foreign.body.lotes[0].lote.id).toBe(other.lot.id);
+      expect(foreign.body.lotes[0].lote.id).not.toBe(owner.lot.id);
+      expect((await owner.agent.get('/api/lotes/estado?incluirInactivos=hola')).status).toBe(400);
+    });
+
+    test('mantiene consistencia conceptual entre estado individual y colección', async () => {
+      const { agent, lot } = await prepararLote('bulk_consistency_user');
+      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionRadar);
+      const individual = await agent.get(`/api/lotes/${lot.id}/estado`);
+      const collection = await agent.get('/api/lotes/estado');
+      const item = collection.body.lotes.find((estado: { lote: { id: string } }) => estado.lote.id === lot.id);
+      expect(item).toBeDefined();
+      expect(item.lote).toEqual(individual.body.lote);
+      expect(item.satelite.radar.observedAt).toBe(individual.body.satelite.radar.observedAt);
+      expect(item.satelite.radar.rvi).toEqual(individual.body.satelite.radar.rvi);
+      expect(item.clima).toEqual(individual.body.clima);
+      expect(item.uso).toEqual(individual.body.uso);
+    });
   });
 });

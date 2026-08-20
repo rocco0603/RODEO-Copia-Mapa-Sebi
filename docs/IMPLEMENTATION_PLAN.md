@@ -254,3 +254,9 @@ Implementada sobre las tablas existentes, sin migración nueva:
   recomendación;
 - tests unitarios de fechas/query params y tests de integración de paginación,
   filtros, estado, datos faltantes y seguridad.
+
+El estado consolidado para todos los lotes (`GET /api/lotes/estado`) reutiliza
+el mismo servicio que el endpoint individual. Ejecuta consultas agrupadas por
+conjunto de lotes, mantiene orden por número y permite incluir inactivos sin
+exponer soft-deleted. La paginación de esta colección queda deliberadamente
+para cuando el dominio permita muchos más lotes por establecimiento.

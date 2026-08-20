@@ -4,6 +4,7 @@ import { requiereAutenticacion } from '../auth/middleware.js';
 import { asyncHandler } from '../http/async-handler.js';
 import { ApiError } from '../http/errors.js';
 import { estaContenido, esPolygonFeature, seSuperpone } from '../geometry.js';
+import { obtenerEstadosDeLotes } from '../services/estado-lotes.js';
 
 export const lotesRouter = Router();
 lotesRouter.use(requiereAutenticacion);
@@ -22,6 +23,19 @@ async function establecimientoDelUsuario(id: string) {
   if (!result.rows[0]) throw new ApiError(409, 'ESTABLISHMENT_REQUIRED', 'Primero tenés que crear un establecimiento.');
   return result.rows[0];
 }
+
+lotesRouter.get('/estado', asyncHandler(async (req, res) => {
+  const incluirInactivosParam = req.query.incluirInactivos;
+  if (incluirInactivosParam !== undefined && (typeof incluirInactivosParam !== 'string' || (incluirInactivosParam !== 'true' && incluirInactivosParam !== 'false'))) {
+    throw new ApiError(400, 'INVALID_INCLUDE_INACTIVE', 'incluirInactivos debe ser true o false.');
+  }
+  const incluirInactivos = incluirInactivosParam === 'true';
+  const establecimiento = await establecimientoDelUsuario(userId(req));
+  const condiciones = ['establecimiento_id = $1', 'deleted_at IS NULL'];
+  if (!incluirInactivos) condiciones.push('activo = TRUE');
+  const result = await pool.query<{ id: string }>(`SELECT id FROM lotes WHERE ${condiciones.join(' AND ')} ORDER BY numero ASC`, [establecimiento.id]);
+  res.json({ lotes: await obtenerEstadosDeLotes(result.rows.map((lote) => lote.id)) });
+}));
 
 lotesRouter.get('/', asyncHandler(async (req, res) => {
   const establishment = await establecimientoDelUsuario(userId(req));

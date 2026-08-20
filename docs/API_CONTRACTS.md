@@ -308,3 +308,12 @@ calendario; sin uso es `null`.
 
 `/estado` no llama Copernicus ni Open-Meteo, no combina Sentinel-1 con
 Sentinel-2, no calcula un score nuevo y no es un modelo ni una recomendación.
+
+## `GET /api/lotes/estado`
+
+Devuelve `{ "lotes": [...] }` usando el mismo elemento de estado que el
+endpoint individual. Por defecto incluye sólo lotes activos; acepta
+`incluirInactivos=true|false` y nunca incluye soft-deleted. Los elementos se
+ordenan por `lote.numero ASC`. Esta colección no se pagina todavía: se eligió
+una respuesta completa porque un establecimiento tiene una cantidad razonable
+de lotes y será una entrada futura del motor de decisión, no el motor mismo.
