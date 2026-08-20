@@ -230,6 +230,13 @@ Formato recomendado:
 
 Códigos legibles ayudan al frontend a decidir cómo mostrar el error sin depender sólo del texto.
 
+## Estado de implementación
+
+Auth, Establecimiento y Lotes ya están implementados en el backend. La sesión
+usa la cookie HttpOnly `rodeo_session` y los errores usan `{ "error": { "code",
+"message" } }`. Satélite, clima y notificaciones siguen siendo contratos
+futuros.
+
 ## Compatibilidad frontend
 
 Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existentes (`Establecimiento`, `Lote`, `ResultadoLote`, `ResultadoClimaLote`) para minimizar cambios en componentes de mapa y paneles.

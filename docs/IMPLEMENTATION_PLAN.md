@@ -200,6 +200,14 @@ Con la DB ya llena, recién entonces construir una vista Historial real que pued
 - roles de usuarios;
 - múltiples establecimientos por usuario.
 
+## Estado de la segunda etapa
+
+Completados registro, login, logout y `auth/me` con bcryptjs, JWT firmado,
+cookie HttpOnly, middleware reutilizable y errores JSON. También están
+implementadas las APIs privadas de establecimiento y lotes, con validación
+GeoJSON `Feature<Polygon>`, contención, superposición, pertenencia al usuario,
+soft delete, numeración histórica y finalización irreversible del onboarding.
+
 ## Definition of done por fase
 
 Cada fase debe:

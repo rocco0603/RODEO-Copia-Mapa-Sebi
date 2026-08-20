@@ -1,9 +1,15 @@
 # RODEO
 
+Este repositorio contiene el frontend React/Vite existente y el backend real
+Node.js/Express/PostgreSQL. El backend ya incluye autenticación, sesiones por
+cookie HttpOnly y APIs privadas de establecimiento y lotes. El texto histórico
+del frontend que aparece más abajo conserva contexto de la arquitectura
+original, pero el backend ya no está fuera de alcance.
+
 Front de gestión de establecimiento y lotes para ganadería, con condición de
 pastoreo (satelital) y clima por lote. Es un proyecto grupal: este repo es
-sólo el front — el dispositivo GPS y el backend los está armando el resto
-del grupo por separado (más detalle en "Roadmap y bloqueos" más abajo).
+El backend de este mismo repositorio ya es la base oficial de persistencia y
+autenticación; GPS y ganado continúan fuera de alcance.
 
 Este documento existe para que quien retome el proyecto —humano o asistente
 de IA, en otra máquina, sin el historial de chat previo— entienda el estado
@@ -200,12 +206,11 @@ olvidados:
    lote (ver por qué el ML está pausado arriba).
 3. **Persistencia real / multi-dispositivo** — hoy todo vive en
    `localStorage` del navegador (`storage.ts`), un solo dispositivo, sin
-   backup. Lo va a resolver el **backend del grupo** (base de datos +
-   sincronización front ↔ dispositivo). No se debe construir un backend
-   ad-hoc acá mientras tanto.
+   backup. Lo resuelve el backend de este repositorio de forma incremental,
+   manteniendo el frontend y `localStorage` durante la transición.
 4. **Alertas / análisis programado** — considerado irrelevante hasta que
-   exista el backend del punto 3 (sin backend no hay dónde correr un chequeo
-   periódico ni a quién notificar).
+   exista la persistencia y autenticación del backend; la automatización de
+   chequeos periódicos queda para una etapa posterior.
 
 ## Convenciones del proyecto
 
@@ -225,3 +230,10 @@ olvidados:
   reales y se parsean bien — no hay captura de pantalla real de la UI
   todavía. Si en algún momento se habilita esa herramienta, vale la pena
   revisar el detalle visual con calma.
+## Autenticación y pruebas del backend
+
+El backend actual usa `AUTH_JWT_SECRET` en `backend/.env`, JWT en cookie
+HttpOnly `rodeo_session`, y APIs privadas de establecimiento y lotes. No se
+conecta todavía con `App.tsx` ni reemplaza `localStorage`.
+
+La guía de pruebas manuales está en [docs/INSOMNIA_TESTING.md](docs/INSOMNIA_TESTING.md).

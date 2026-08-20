@@ -114,6 +114,13 @@ GET  /api/auth/me
 
 No devolver `password_hash` nunca.
 
+## Implementación actual de sesión
+
+El backend usa JWT firmado en la cookie HttpOnly `rodeo_session`, con
+`SameSite=Lax`, `Secure` en producción y duración de 7 días. El secreto se
+configura con `AUTH_JWT_SECRET` y nunca se envía al frontend. El mínimo actual
+de contraseña es 8 caracteres.
+
 ## Validaciones
 
 Como mínimo:
