@@ -113,6 +113,14 @@ Una vez completado, nunca relock automático por quedarse sin lotes.
 
 ## Fase 5 — reemplazar `localStorage`
 
+## Estado real al cierre de la etapa actual
+
+La autenticación y el backend de establecimiento/lotes ya están implementados,
+y el frontend ya resuelve loading, login, registro, sesión persistente y logout.
+El onboarding visual todavía es una pantalla de transición. El mapa continúa
+usando `localStorage` para establecimiento y lotes; por lo tanto esta Fase 5
+es la siguiente etapa efectiva, no una tarea ya terminada.
+
 Migrar gradualmente:
 
 - cargar establecimiento desde API;

@@ -4,10 +4,10 @@ import https from "node:https";
 import tls from "node:tls";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  COPERNICUS_CLIENT_ID,
-  COPERNICUS_CLIENT_SECRET,
-} from "./copernicus.credentials";
+export interface CopernicusCredentials {
+  clientId?: string;
+  clientSecret?: string;
+}
 
 /**
  * Middleware de desarrollo que habla con Copernicus Data Space Ecosystem.
@@ -26,6 +26,8 @@ const STATISTICS_URL = "https://sh.dataspace.copernicus.eu/api/v1/statistics";
 
 const TIMEOUT_MS = 60_000;
 const PLACEHOLDER = /^PEGA_ACA_/;
+let copernicusClientId = "";
+let copernicusClientSecret = "";
 
 /* ------------------------------------------------------------------ */
 /* TLS: cadena de CAs                                                  */
@@ -168,10 +170,10 @@ function postear(
 
 function credencialesConfiguradas(): boolean {
   return (
-    !!COPERNICUS_CLIENT_ID &&
-    !!COPERNICUS_CLIENT_SECRET &&
-    !PLACEHOLDER.test(COPERNICUS_CLIENT_ID) &&
-    !PLACEHOLDER.test(COPERNICUS_CLIENT_SECRET)
+    !!copernicusClientId &&
+    !!copernicusClientSecret &&
+    !PLACEHOLDER.test(copernicusClientId) &&
+    !PLACEHOLDER.test(copernicusClientSecret)
   );
 }
 
@@ -186,8 +188,8 @@ async function obtenerToken(forzarRenovacion = false): Promise<string> {
     TOKEN_URL,
     new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: COPERNICUS_CLIENT_ID,
-      client_secret: COPERNICUS_CLIENT_SECRET,
+      client_id: copernicusClientId,
+      client_secret: copernicusClientSecret,
     }).toString(),
     { "Content-Type": "application/x-www-form-urlencoded" },
   );
@@ -196,7 +198,7 @@ async function obtenerToken(forzarRenovacion = false): Promise<string> {
     tokenCache = null;
     throw new ErrorHttp(
       status === 401 ? 401 : 502,
-      `Copernicus rechazó las credenciales (HTTP ${status}). Revisá client id y secret en copernicus.credentials.ts. Respuesta: ${texto.slice(0, 300)}`,
+      `Copernicus rechazó las credenciales (HTTP ${status}). Revisá COPERNICUS_CLIENT_ID y COPERNICUS_CLIENT_SECRET. Respuesta: ${texto.slice(0, 300)}`,
     );
   }
 
@@ -255,7 +257,7 @@ async function manejarEstadisticas(
     if (!credencialesConfiguradas()) {
       throw new ErrorHttp(
         503,
-        "Faltan las credenciales de Copernicus. Completá COPERNICUS_CLIENT_ID y COPERNICUS_CLIENT_SECRET en copernicus.credentials.ts y reiniciá el dev-server.",
+        "Faltan las credenciales de Copernicus. Configurá COPERNICUS_CLIENT_ID y COPERNICUS_CLIENT_SECRET y reiniciá el dev-server.",
       );
     }
     const { status, texto } = await pedirEstadisticas(await leerCuerpo(req));
@@ -270,7 +272,10 @@ async function manejarEstadisticas(
   }
 }
 
-export default function copernicusPlugin(): Plugin {
+export default function copernicusPlugin(credentials: CopernicusCredentials = {}): Plugin {
+  copernicusClientId = credentials.clientId?.trim() ?? "";
+  copernicusClientSecret = credentials.clientSecret?.trim() ?? "";
+
   return {
     name: "rodeo-copernicus",
     configureServer(server) {

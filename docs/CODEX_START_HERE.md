@@ -8,6 +8,14 @@ El frontend actual funciona y no debe reescribirse. La tarea es agregar backend 
 
 ## Primera tarea recomendada
 
+## Estado vigente del repositorio
+
+Las instrucciones de esta sección son el contexto histórico de bootstrap. La
+primera tarea ya fue completada y también se implementaron autenticación,
+sesión persistente, APIs privadas de establecimiento/lotes y la integración de
+auth en el frontend. La siguiente etapa es el onboarding visual real y la
+migración gradual de establecimiento/lotes desde `localStorage` hacia Neon.
+
 Implementar únicamente la base técnica del backend y el esquema PostgreSQL. No tocar todavía Copernicus, Open-Meteo ni la lógica del mapa salvo que sea necesario para compilar.
 
 ### Entregables de la primera tarea

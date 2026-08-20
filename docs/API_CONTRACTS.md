@@ -239,4 +239,11 @@ futuros.
 
 ## Compatibilidad frontend
 
+## Estado real de integración
+
+El frontend ya está conectado a `auth/me`, registro, login y logout. En cambio,
+el mapa todavía obtiene establecimiento y lotes desde `localStorage`; los
+contratos privados de esas APIs están implementados en backend y serán la
+fuente efectiva en la siguiente etapa de integración del mapa.
+
 Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existentes (`Establecimiento`, `Lote`, `ResultadoLote`, `ResultadoClimaLote`) para minimizar cambios en componentes de mapa y paneles.

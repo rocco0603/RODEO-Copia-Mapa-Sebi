@@ -121,6 +121,19 @@ El backend usa JWT firmado en la cookie HttpOnly `rodeo_session`, con
 configura con `AUTH_JWT_SECRET` y nunca se envía al frontend. El mínimo actual
 de contraseña es 8 caracteres.
 
+## Frontend actual
+
+El estado de autenticación ya está integrado en `App` y la aplicación del mapa
+vive en `RodeoApp`, evitando cambios en el orden de hooks entre login y sesión.
+El onboarding visual completo todavía no está implementado. Además, aunque el
+usuario y `onboarding_completed_at` vienen del backend, establecimiento y lotes
+del mapa siguen dependiendo temporalmente de `localStorage`.
+
+El frontend consulta `GET /api/auth/me` antes de renderizar el mapa. Sin sesión
+muestra login/registro; con onboarding pendiente muestra una pantalla temporal
+de configuración; con onboarding completo muestra la aplicación actual. Login,
+registro y logout usan `credentials: "include"` para conservar la cookie.
+
 ## Validaciones
 
 Como mínimo:

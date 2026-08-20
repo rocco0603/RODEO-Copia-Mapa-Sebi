@@ -36,17 +36,43 @@ npm run certs        # sólo en Windows con red corporativa (ver abajo)
 npm run dev
 ```
 
-Antes de arrancar, creá `copernicus.credentials.ts` a partir de la plantilla y
-pegá tu client id / secret de https://dataspace.copernicus.eu (gratis, hace
-falta una cuenta CDSE):
-
-```bash
-cp copernicus.credentials.example.ts copernicus.credentials.ts
-```
+Copernicus es opcional para levantar el frontend. Si querés usar el análisis
+satelital, creá `.env.local` en la raíz a partir de `.env.example` y completá
+`COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET` con credenciales de
+https://dataspace.copernicus.eu. No uses prefijo `VITE_`: esas variables las
+lee únicamente el proceso Node de Vite.
 
 El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 
-## Backend inicial
+## Estado real de cierre de etapa
+
+### IMPLEMENTADO
+
+- Frontend React/Vite con mapa Leaflet, dibujo actual, Turf, Copernicus Sentinel-1/Sentinel-2 y Open-Meteo.
+- Backend Node.js + TypeScript + Express con PostgreSQL real en Neon.
+- `GET /api/health`.
+- Registro, login, logout y `GET /api/auth/me`, con bcrypt, JWT en cookie HttpOnly y sesión persistente.
+- APIs privadas de establecimiento y lotes, validaciones geométricas, lotes contenidos, no solapamiento, soft delete, numeración histórica no reutilizable y `onboarding_completed_at` irreversible.
+- Frontend conectado a autenticación real: loading inicial, login, registro, usuario visible, logout y separación `App`/`RodeoApp` para conservar el orden de hooks del mapa.
+- Proxy Vite para el backend.
+- Copernicus es opcional para levantar Vite. Sus credenciales se leen únicamente en Node/Vite desde `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`; sin ellas, estado responde `configurado:false` y las estadísticas responden indisponibilidad controlada. No se usa prefijo `VITE_`.
+
+### ESTADO TEMPORAL IMPORTANTE
+
+La autenticación y el estado de onboarding ya usan el backend/PostgreSQL de Neon, pero el establecimiento y los lotes que muestra el mapa todavía se cargan y guardan en `localStorage`. Por eso un usuario puede figurar con onboarding completo en Neon y no ver sus geometrías en otro navegador que no tenga ese `localStorage`.
+
+### EN IMPLEMENTACIÓN / SIGUIENTE ETAPA
+
+- onboarding visual real;
+- conectar el establecimiento y los lotes del mapa con sus APIs privadas;
+- convertir Neon/PostgreSQL en la fuente real de esos datos;
+- retirar gradualmente `localStorage`, manteniendo el mapa y su comportamiento actual.
+
+### PENDIENTE Y FUERA DE ALCANCE
+
+Google OAuth, persistencia backend de Copernicus/Open-Meteo, notificaciones e historial en UI, deploy, CORS/cookies finales según deployment y Vercel (posible a futuro, no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
+
+## Backend actual
 
 El backend vive en `backend/` y usa Node.js, TypeScript, Express y PostgreSQL
 mediante `pg`. Para configurarlo, copiá `backend/.env.example` como
@@ -69,7 +95,9 @@ npm run build
 ```
 
 La migración inicial crea las siete tablas de dominio y sus índices básicos.
-Todavía no implementa autenticación ni conecta el frontend.
+La autenticación y la conexión del frontend ya están implementadas. La
+migración del establecimiento y los lotes desde `localStorage` hacia estas
+APIs queda como siguiente etapa.
 
 ## Qué NO viene en esta copia (y cómo se recupera)
 
@@ -78,7 +106,7 @@ Todavía no implementa autenticación ni conecta el frontend.
 | `node_modules/` | `npm install` |
 | `certs/` | `npm run certs` |
 | `dist/`, `.tsbuild/` | `npm run build` |
-| `copernicus.credentials.ts` | copiar la plantilla y pegar las credenciales (nunca se commitea, ver `.gitignore`) |
+| `.env.local` | credenciales opcionales de Copernicus (nunca se commitea, ver `.gitignore`) |
 
 ## Sobre `npm run certs`
 
@@ -110,11 +138,23 @@ un hueco visual. Ejemplos concretos:
 
 Cualquier feature nueva debe seguir esta misma regla.
 
+## Frontend autenticado
+
+Al abrir el frontend se consulta `/api/auth/me` antes de renderizar el mapa.
+Una sesión válida con onboarding completo ve la aplicación actual; una sesión
+pendiente ve la pantalla temporal de configuración inicial; sin sesión se ve
+login/registro. Las cookies se envían con `credentials: "include"`.
+
+En desarrollo Vite proxye únicamente `/api/auth`, `/api/establecimiento`,
+`/api/lotes` y `/api/health` hacia `localhost:3001`. `/api/copernicus` sigue
+siendo atendido exclusivamente por su plugin actual. Google OAuth y el
+onboarding visual completo quedan para etapas posteriores.
+
 ## Arquitectura
 
 ```
 vite-plugin-copernicus.ts   proxy de Node para Sentinel Hub (Copernicus)
-copernicus.credentials.ts   client id/secret de CDSE (gitignored)
+.env.local                  credenciales opcionales de CDSE (gitignored)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 
 src/
@@ -233,7 +273,8 @@ olvidados:
 ## Autenticación y pruebas del backend
 
 El backend actual usa `AUTH_JWT_SECRET` en `backend/.env`, JWT en cookie
-HttpOnly `rodeo_session`, y APIs privadas de establecimiento y lotes. No se
-conecta todavía con `App.tsx` ni reemplaza `localStorage`.
+HttpOnly `rodeo_session`, y APIs privadas de establecimiento y lotes. El
+frontend ya está conectado a la autenticación; `localStorage` sólo continúa
+temporalmente para los datos del mapa.
 
 La guía de pruebas manuales está en [docs/INSOMNIA_TESTING.md](docs/INSOMNIA_TESTING.md).

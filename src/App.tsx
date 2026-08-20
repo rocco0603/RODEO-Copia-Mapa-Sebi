@@ -19,6 +19,9 @@ import { consultarClimaLotes } from "./clima/api";
 import type { ResultadoClimaLote } from "./clima/types";
 import ClimaPanel from "./components/ClimaPanel";
 import type { Establecimiento, Lote, PolygonFeature, RodeoState } from "./types";
+import { getCurrentUser, logout, type UsuarioAutenticado } from "./api/auth";
+import AuthScreen from "./components/AuthScreen";
+import SetupPendingScreen from "./components/SetupPendingScreen";
 import "./App.css";
 
 type Modal =
@@ -33,7 +36,12 @@ interface Notice {
   text: string;
 }
 
-export default function App() {
+interface RodeoAppProps {
+  usuario: UsuarioAutenticado;
+  onLogout: () => Promise<void>;
+}
+
+function RodeoApp({ usuario, onLogout }: RodeoAppProps) {
   const [state, setState] = useState<RodeoState>(() => loadState());
   const [drawMode, setDrawMode] = useState<DrawMode>("idle");
   const [editingBoundary, setEditingBoundary] = useState(false);
@@ -331,6 +339,8 @@ export default function App() {
         onRenameLote={(id) => setModal({ type: "rename-lote", loteId: id })}
         onToggleActivoLote={handleToggleActivoLote}
         onDeleteLote={(id) => setModal({ type: "confirm-delete-lote", loteId: id })}
+        usuarioNombre={usuario.username}
+        onLogout={onLogout}
         panelClima={
           <ClimaPanel
             lotesActivos={lotesActivosParaMapa}
@@ -432,4 +442,55 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const [authStatus, setAuthStatus] = useState<"loading" | "unauthenticated" | "authenticated">("loading");
+  const [usuario, setUsuario] = useState<UsuarioAutenticado | null>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    getCurrentUser()
+      .then((user) => {
+        if (!vigente) return;
+        setUsuario(user);
+        setAuthStatus(user ? "authenticated" : "unauthenticated");
+      })
+      .catch(() => {
+        if (vigente) setAuthStatus("unauthenticated");
+      });
+    return () => {
+      vigente = false;
+    };
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      setUsuario(null);
+      setAuthStatus("unauthenticated");
+    }
+  }
+
+  if (authStatus === "loading") {
+    return (
+      <main className="auth-loading" aria-live="polite">
+        <span className="auth-brand-mark">R</span>
+        <p>Comprobando tu sesión...</p>
+      </main>
+    );
+  }
+
+  if (authStatus === "unauthenticated") {
+    return <AuthScreen onAuthenticated={(user) => { setUsuario(user); setAuthStatus("authenticated"); }} />;
+  }
+
+  if (!usuario) return null;
+
+  if (!usuario.onboardingCompleted) {
+    return <SetupPendingScreen user={usuario} onLogout={handleLogout} />;
+  }
+
+  return <RodeoApp usuario={usuario} onLogout={handleLogout} />;
 }

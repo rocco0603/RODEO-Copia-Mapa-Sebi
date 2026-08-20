@@ -26,15 +26,17 @@ El radar Sentinel-1 nunca se mezcla con la óptica Sentinel-2 en el mismo puntaj
 
 ## Qué sí está habilitado ahora
 
-- backend Node.js;
-- PostgreSQL;
-- esquema/migraciones;
-- registro/login;
-- onboarding;
-- persistencia de establecimiento y lotes;
-- historial satelital;
-- historial de clima;
-- notificaciones base.
+- backend Node.js + TypeScript + Express;
+- PostgreSQL en Neon y esquema/migraciones;
+- registro/login/logout y sesión persistente;
+- APIs privadas de establecimiento y lotes con validaciones;
+- integración de autenticación en el frontend;
+- onboarding backend irreversible; la pantalla visual completa sigue pendiente;
+- mapa, Copernicus y Open-Meteo existentes.
+
+El establecimiento y los lotes que muestra el mapa todavía usan `localStorage`.
+La conexión de esas operaciones a las APIs y la persistencia histórica de
+satélite/clima son etapas posteriores.
 
 ## Qué sigue pausado
 
@@ -56,6 +58,11 @@ Primera versión de DB: guardar polígonos como `JSONB`, no introducir PostGIS t
 Regla nueva importante: una edición del establecimiento no puede guardarse si deja algún lote no eliminado parcial o totalmente afuera. La edición debe rechazarse y conservar/restaurar el límite anterior.
 
 ## Persistencia
+
+Estado actual: autenticación y estado de onboarding ya usan el backend y
+PostgreSQL/Neon, mientras que el establecimiento y los lotes que renderiza el
+mapa todavía dependen de `localStorage`. La migración de esos datos a las APIs
+privadas es la siguiente etapa.
 
 `localStorage` es provisional. La fuente definitiva será PostgreSQL. Migrar de forma incremental, no borrar de golpe la lógica actual antes de tener equivalencia funcional vía API.
 

@@ -2,7 +2,9 @@
 
 ## Objetivo de esta etapa
 
-El repositorio ya tiene un frontend funcional para dibujar un establecimiento y sus lotes, consultar condición satelital real y consultar clima real. La siguiente etapa agrega la capa que faltaba: usuarios, backend, base de datos y persistencia histórica.
+El repositorio tiene un frontend funcional y ya cuenta con usuarios,
+autenticación, backend y PostgreSQL/Neon. La etapa siguiente completa la
+persistencia real del establecimiento y los lotes del mapa.
 
 No se debe rehacer el mapa. Se debe conservar la arquitectura actual y conectarla a persistencia real.
 
@@ -34,6 +36,25 @@ Actualmente establecimiento y lotes se guardan en `localStorage`. Eso fue correc
 La fuente definitiva será PostgreSQL. `localStorage` puede mantenerse temporalmente como compatibilidad/migración durante la implementación, pero el objetivo es que un usuario pueda iniciar sesión desde otro dispositivo y recuperar su establecimiento, lotes e historial desde el backend.
 
 ## Nueva arquitectura objetivo
+
+## Estado real de cierre de etapa
+
+La base de backend y autenticación ya está implementada: PostgreSQL en Neon,
+registro/login/logout, `auth/me`, bcrypt, JWT en cookie HttpOnly, APIs privadas
+de establecimiento y lotes, validaciones geométricas, soft delete, numeración
+histórica y finalización irreversible del onboarding. El frontend ya consume
+la autenticación real y conserva el mapa mediante `App`/`RodeoApp`.
+
+La situación es deliberadamente intermedia: el backend conoce al usuario y su
+estado de onboarding, pero el mapa todavía usa `localStorage` para mostrar y
+guardar establecimiento y lotes. La próxima etapa conecta esas operaciones a
+`GET/POST/PATCH /api/establecimiento` y `GET/POST/PATCH/DELETE /api/lotes`, para
+que Neon sea la fuente multi-dispositivo. El onboarding visual completo queda
+en esa etapa.
+
+Copernicus no es requisito para arrancar Vite. Las credenciales opcionales son
+`COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`, sólo del lado Node/Vite y
+sin prefijo `VITE_`; Open-Meteo no requiere credenciales.
 
 ```text
 Frontend React

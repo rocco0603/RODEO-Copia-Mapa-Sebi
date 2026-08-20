@@ -21,6 +21,20 @@ Decidido:
 
 ## Notificaciones
 
+## Decisiones cerradas desde la implementación actual
+
+- La sesión usa JWT en cookie HttpOnly `rodeo_session`.
+- La sesión dura 7 días; `SameSite=Lax` en desarrollo y `Secure` en producción.
+- La contraseña exige al menos 8 caracteres; el username debe ser único.
+- PostgreSQL remoto es Neon para el estado actual.
+- Copernicus es opcional en desarrollo y usa `COPERNICUS_CLIENT_ID`/
+  `COPERNICUS_CLIENT_SECRET` sin exponer secretos al navegador.
+- La autenticación ya usa Neon, pero los datos de mapa aún usan `localStorage`
+  hasta la siguiente etapa de conexión de establecimiento y lotes.
+
+Lo que sigue abierto es el deployment final, incluyendo dominio, CORS y
+atributos definitivos de cookies.
+
 Pendiente:
 
 - diseño final (campana, panel, página o combinación);
@@ -92,7 +106,7 @@ Decidido:
 
 - Node.js;
 - PostgreSQL;
-- Neon cuando se conecte la DB remota;
+- Neon como PostgreSQL remoto del estado actual;
 - secretos sólo en entorno servidor.
 
 Pendiente:

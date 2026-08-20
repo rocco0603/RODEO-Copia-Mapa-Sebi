@@ -25,6 +25,8 @@ interface SidebarProps {
   onRenameLote: (id: string) => void;
   onToggleActivoLote: (id: string) => void;
   onDeleteLote: (id: string) => void;
+  usuarioNombre: string;
+  onLogout: () => void;
   /** Panel de clima; se muestra en su propia sección. */
   panelClima?: ReactNode;
   /** Panel de condición satelital; se muestra en su propia sección. */
@@ -58,6 +60,8 @@ export default function Sidebar({
   onRenameLote,
   onToggleActivoLote,
   onDeleteLote,
+  usuarioNombre,
+  onLogout,
   panelClima,
   panelCondicion,
 }: SidebarProps) {
@@ -267,6 +271,14 @@ export default function Sidebar({
           </div>
         </>
       )}
+
+      <div className="sidebar-account">
+        <div>
+          <span className="sidebar-account-label">Sesión activa</span>
+          <strong>{usuarioNombre}</strong>
+        </div>
+        <button className="btn-link" onClick={onLogout}>Cerrar sesión</button>
+      </div>
     </aside>
   );
 }
