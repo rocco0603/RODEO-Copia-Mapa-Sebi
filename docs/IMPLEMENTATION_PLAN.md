@@ -217,6 +217,15 @@ implementadas las APIs privadas de establecimiento y lotes, con validación
 GeoJSON `Feature<Polygon>`, contención, superposición, pertenencia al usuario,
 soft delete, numeración histórica y finalización irreversible del onboarding.
 
+## Etapa de ficha completa de lote
+
+Implementada en frontend sin cambios de modelo ni de backend. React Router
+expone `/lotes/:id`, incluidos deep links y recarga directa; la página consume
+el estado consolidado y los historiales paginados existentes, separa Sentinel-2
+óptico de Sentinel-1 radar, y muestra NDVI, clima, descanso, usos e historial.
+También permite actualizar satélite/clima y registrar usos con las APIs ya
+existentes. La ausencia de datos se muestra explícitamente.
+
 ## Definition of done por fase
 
 ## Estado real de la etapa de onboarding y persistencia

@@ -266,6 +266,14 @@ el mapa obtiene establecimiento y lotes desde estos contratos privados de API;
 
 Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existentes (`Establecimiento`, `Lote`, `ResultadoLote`, `ResultadoClimaLote`) para minimizar cambios en componentes de mapa y paneles.
 
+## Consumo desde la ficha del lote
+
+La ruta frontend `/lotes/:id` carga el estado consolidado y, en paralelo, los
+tres listados paginados existentes con 20 elementos por pÃ¡gina. Las
+actualizaciones desde la ficha reutilizan los POST existentes y vuelven a
+cargar estado e historial; no agregan endpoints ni modifican el contrato del
+backend.
+
 ## Contratos actuales de historial
 
 Los endpoints `GET /api/lotes/:id/mediciones-satelitales`,

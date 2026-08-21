@@ -129,6 +129,12 @@ Implementado: `GET /api/lotes/estado` devuelve la colección completa de lotes
 activos, con opción explícita de incluir inactivos no eliminados. No se pagina
 por ahora debido al límite conceptual actual de lotes por establecimiento.
 
+## Ficha completa de lote
+
+Implementada en `/lotes/:id`, con historial paginado y deep link. Siguen
+pendientes las notificaciones UI y mover las consultas de Copernicus/Open-Meteo
+al backend; esta ficha no introduce recomendaciones ni cambios de modelo.
+
 ## Ganado y GPS
 
 ## Decisiones cerradas de la etapa actual

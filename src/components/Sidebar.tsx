@@ -17,6 +17,7 @@ interface SidebarProps {
   guardando?: boolean;
   onToggleShowInactivos: () => void;
   onSelectLote: (id: string) => void;
+  onOpenFicha: (id: string) => void;
   onStartDrawEstablecimiento: () => void;
   onStartDrawLote: () => void;
   onCancelDraw: () => void;
@@ -59,6 +60,7 @@ export default function Sidebar({
   guardando = false,
   onToggleShowInactivos,
   onSelectLote,
+  onOpenFicha,
   onStartDrawEstablecimiento,
   onStartDrawLote,
   onCancelDraw,
@@ -264,6 +266,17 @@ export default function Sidebar({
                         <div className="lote-item-sub">
                           <span>{ha.toFixed(2)} ha</span>
                           <div className="lote-item-actions">
+                            {selected && !editingLoteId && (
+                              <button
+                                className="btn-link"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenFicha(lote.id);
+                                }}
+                              >
+                                Ver ficha
+                              </button>
+                            )}
                             {selected && editingLoteId === lote.id ? (
                               <div className="button-row">
                                 <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); onSaveEditLote(); }} disabled={guardando}>

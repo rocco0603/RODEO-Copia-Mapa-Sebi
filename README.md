@@ -72,6 +72,15 @@ backend/PostgreSQL de Neon. No se consulta `localStorage` para esos datos.
 
 Google OAuth, persistencia backend de Copernicus/Open-Meteo, notificaciones e historial en UI, deploy, CORS/cookies finales según deployment y Vercel (posible a futuro, no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
 
+## Ficha completa de lote
+
+La ficha real está disponible en `/lotes/:id`, también mediante deep link y
+recarga directa. Se abre desde el mapa y los listados del sidebar, y consume
+`GET /api/lotes/:id/estado` junto con los historiales paginados existentes.
+Muestra Sentinel-2 y Sentinel-1 por separado, evolución NDVI, clima, descanso,
+registro de uso e historial por pestañas. También permite actualizar satélite,
+actualizar clima y registrar un uso sin modificar el mapa ni el modelo de datos.
+
 ## Backend actual
 
 El backend vive en `backend/` y usa Node.js, TypeScript, Express y PostgreSQL

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { getCurrentUser, logout, type UsuarioAutenticado } from "./api/auth";
 import AuthScreen from "./components/AuthScreen";
 import RodeoApp from "./components/RodeoApp";
+import LotePage from "./pages/LotePage";
 import "./App.css";
 
 type AuthStatus = "loading" | "unauthenticated" | "authenticated";
@@ -29,5 +31,9 @@ export default function App() {
   if (authStatus === "loading") return <main className="auth-loading" aria-live="polite"><span className="auth-brand-mark">R</span><p>Comprobando tu sesión...</p></main>;
   if (authStatus === "unauthenticated") return <AuthScreen onAuthenticated={(user) => { setUsuario(user); setAuthStatus("authenticated"); }} />;
   if (!usuario) return null;
-  return <RodeoApp usuario={usuario} onUserUpdated={setUsuario} onLogout={handleLogout} />;
+  return <Routes>
+    <Route path="/" element={<RodeoApp usuario={usuario} onUserUpdated={setUsuario} onLogout={handleLogout} />} />
+    <Route path="/lotes/:id" element={usuario.onboardingCompleted ? <LotePage /> : <Navigate to="/" replace />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>;
 }

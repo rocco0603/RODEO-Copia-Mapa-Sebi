@@ -71,6 +71,12 @@ Los lotes usan soft delete para conservar historial.
 
 Cada observación satelital real y cada consulta de clima deben poder persistirse históricamente sin pisar datos anteriores.
 
+## Ficha completa de lote
+
+El frontend dispone de la ficha `/lotes/:id`, con routing real, deep link y
+carga directa desde los endpoints de estado e historial. Mantener esta lógica
+fuera del mapa y no reintroducir `localStorage` como fuente de datos.
+
 ## Seguridad
 
 La persistencia histórica debe guardar únicamente datos reales recibidos de

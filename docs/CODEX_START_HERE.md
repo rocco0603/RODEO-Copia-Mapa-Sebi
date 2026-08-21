@@ -6,6 +6,12 @@ Este archivo no reemplaza `AGENTS.md`: primero leer `AGENTS.md` y toda la docume
 
 El frontend actual funciona y no debe reescribirse. La tarea es agregar backend y persistencia real de manera incremental.
 
+## Estado frontend actual
+
+El onboarding visual, la persistencia de establecimiento/lotes y la ficha
+completa `/lotes/:id` ya están implementados. Mantener el mapa y no reintroducir
+`localStorage` como fuente de verdad.
+
 ## Primera tarea recomendada
 
 ## Estado vigente del repositorio

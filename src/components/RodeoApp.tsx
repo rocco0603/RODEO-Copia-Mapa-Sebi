@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import MapView from "./MapView";
 import type { CondicionVisual, MapEngineHandle } from "./MapEngine";
 import Sidebar, { type DrawMode } from "./Sidebar";
@@ -16,8 +17,7 @@ import type { Establecimiento, Lote, PolygonFeature } from "../types";
 import { getCurrentUser, type UsuarioAutenticado } from "../api/auth";
 import { ApiError } from "../api/client";
 import { actualizarEstablecimiento, actualizarLote, crearEstablecimiento, crearLote, eliminarLote, obtenerEstablecimiento, obtenerLotes } from "../api/rodeo";
-import { guardarConsultaClima, guardarMedicionSatelital, medicionDesdeResultado, obtenerHistorialLote, registrarUsoLote, type HistorialLote, type OrigenConsultaClima } from "../api/historial";
-import LoteDetallePanel from "./LoteDetallePanel";
+import { guardarConsultaClima, guardarMedicionSatelital, medicionDesdeResultado, type OrigenConsultaClima } from "../api/historial";
 
 type Modal =
   | { type: "nombre-establecimiento"; polygon: PolygonFeature }
@@ -41,6 +41,7 @@ function mensajeApi(error: unknown): string {
 }
 
 export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
+  const navigate = useNavigate();
   const [establecimiento, setEstablecimiento] = useState<Establecimiento | null>(null);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [datosCargando, setDatosCargando] = useState(true);
@@ -60,10 +61,6 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
   const [credencialesOk, setCredencialesOk] = useState<boolean | null>(null);
   const [resultadosClima, setResultadosClima] = useState<Record<string, ResultadoClimaLote>>({});
   const [climaConsultando, setClimaConsultando] = useState(false);
-  const [historial, setHistorial] = useState<HistorialLote | null>(null);
-  const [historialCargando, setHistorialCargando] = useState(false);
-  const [historialError, setHistorialError] = useState<string | null>(null);
-  const [registrandoUso, setRegistrandoUso] = useState(false);
   const mapRef = useRef<MapEngineHandle>(null);
 
   useEffect(() => {
@@ -112,26 +109,12 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
     [lotes, showInactivos],
   );
 
-  async function cargarHistorial(id: string) {
-    setHistorialCargando(true);
-    setHistorialError(null);
-    try { setHistorial(await obtenerHistorialLote(id)); }
-    catch (error: unknown) { setHistorialError(mensajeApi(error)); }
-    finally { setHistorialCargando(false); }
-  }
-
-  useEffect(() => {
-    if (!selectedLoteId) { setHistorial(null); return; }
-    void cargarHistorial(selectedLoteId);
-  }, [selectedLoteId]);
-
   async function persistirResultadosSatelitales(respuestas: ResultadoLote[], consultadoEn: number) {
     const operaciones = respuestas
       .filter((respuesta): respuesta is Extract<ResultadoLote, { estado: "ok" } | { estado: "radar" }> => respuesta.estado === "ok" || respuesta.estado === "radar")
       .flatMap((respuesta) => medicionDesdeResultado(respuesta, consultadoEn).map((medicion) => guardarMedicionSatelital(respuesta.loteId, medicion)));
     const resultadosGuardado = await Promise.allSettled(operaciones);
     if (resultadosGuardado.some((resultado) => resultado.status === "rejected")) setNotice({ kind: "warning", text: "Los datos se obtuvieron, pero no se pudieron guardar en el historial." });
-    if (selectedLoteId) void cargarHistorial(selectedLoteId);
   }
 
   async function persistirResultadosClima(resultadosClimaActuales: Record<string, ResultadoClimaLote>, origen: OrigenConsultaClima) {
@@ -140,7 +123,6 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
       .map((resultado) => guardarConsultaClima(resultado.loteId, resultado, origen));
     const resultadosGuardado = await Promise.allSettled(operaciones);
     if (resultadosGuardado.some((resultado) => resultado.status === "rejected")) setNotice({ kind: "warning", text: "El clima se obtuvo, pero no se pudo guardar en el historial." });
-    if (selectedLoteId) void cargarHistorial(selectedLoteId);
   }
 
   function startEstablecimiento() { if (guardando) return; setNotice(null); setDrawMode("establecimiento"); mapRef.current?.startDrawEstablecimiento(); }
@@ -213,7 +195,16 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
       .finally(() => { setGuardando(false); setEditingLoteId(null); });
   }
 
-  function selectLote(id: string) { setSelectedLoteId(id); const lote = lotes.find((item) => item.id === id); if (lote) mapRef.current?.flyTo(lote.polygon); }
+  function selectLote(id: string) {
+    if (drawMode !== "idle" || editingBoundary || editingLoteId) return;
+    setSelectedLoteId(id);
+    const lote = lotes.find((item) => item.id === id);
+    if (lote) mapRef.current?.flyTo(lote.polygon);
+  }
+  function openFicha(id: string) {
+    if (drawMode !== "idle" || editingBoundary || editingLoteId) return;
+    navigate(`/lotes/${id}`);
+  }
   function toggleActivo(id: string) {
     const lote = lotes.find((item) => item.id === id); if (!lote) return;
     setGuardando(true);
@@ -251,27 +242,11 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
     }); return resultado;
   }, [resultados]);
 
-  async function registrarUso(fecha: string) {
-    if (!selectedLoteId || registrandoUso) return;
-    setRegistrandoUso(true);
-    try {
-      await registrarUsoLote(selectedLoteId, fecha);
-      await cargarHistorial(selectedLoteId);
-    } catch (error: unknown) {
-      setNotice({ kind: "error", text: mensajeApi(error) });
-    } finally {
-      setRegistrandoUso(false);
-    }
-  }
-
-  const loteSeleccionado = selectedLoteId ? lotes.find((lote) => lote.id === selectedLoteId) : undefined;
-  const panelLote = loteSeleccionado ? <LoteDetallePanel lote={loteSeleccionado} resultadoSatelital={resultados[loteSeleccionado.id]} resultadoClima={resultadosClima[loteSeleccionado.id]} historial={historial} cargando={historialCargando} error={historialError} registrandoUso={registrandoUso} onRegistrarUso={registrarUso} /> : null;
-
   if (datosCargando) return <main className="auth-loading" aria-live="polite"><span className="auth-brand-mark">R</span><p>Cargando tus datos...</p></main>;
   if (datosError) return <main className="auth-loading"><p className="auth-error">{datosError}</p><button className="btn btn-primary" onClick={() => window.location.reload()}>Reintentar</button></main>;
 
   return <div className="app-layout">
-    <Sidebar establecimiento={establecimiento} lotes={lotes} showInactivos={showInactivos} selectedLoteId={selectedLoteId} drawMode={drawMode} editingBoundary={editingBoundary} editingLoteId={editingLoteId} onboardingStep={onboardingStep} guardando={guardando} onToggleShowInactivos={() => setShowInactivos((v) => !v)} onSelectLote={selectLote} onStartDrawEstablecimiento={startEstablecimiento} onStartDrawLote={startLote} onCancelDraw={cancelDraw} onStartEditBoundary={() => { if (!editingLoteId) { setEditingBoundary(true); mapRef.current?.startEditBoundary(); } }} onSaveEditBoundary={() => mapRef.current?.saveEditBoundary()} onCancelEditBoundary={() => { mapRef.current?.cancelEditBoundary(); setEditingBoundary(false); }} onStartEditLote={startEditLote} onSaveEditLote={saveEditLote} onCancelEditLote={cancelEditLote} onRenameEstablecimiento={() => setModal({ type: "rename-establecimiento" })} onDeleteEstablecimiento={() => setNotice({ kind: "warning", text: "La eliminación del establecimiento está pendiente." })} onRenameLote={(id) => setModal({ type: "rename-lote", loteId: id })} onToggleActivoLote={toggleActivo} onDeleteLote={(id) => setModal({ type: "confirm-delete-lote", loteId: id })} usuarioNombre={usuario.username} onLogout={onLogout} panelLote={panelLote} panelClima={<ClimaPanel lotesActivos={lotesActivos} resultados={resultadosClima} consultando={climaConsultando} selectedLoteId={selectedLoteId} onActualizar={actualizarClima} onSelectLote={selectLote} />} panelCondicion={<CondicionPanel lotesActivos={lotesActivos} resultados={resultados} analizando={analizando} ultimoAnalisis={ultimoAnalisis} errorGlobal={errorAnalisis} credencialesOk={credencialesOk} selectedLoteId={selectedLoteId} onAnalizar={analizar} onSelectLote={selectLote} />} />
+    <Sidebar establecimiento={establecimiento} lotes={lotes} showInactivos={showInactivos} selectedLoteId={selectedLoteId} drawMode={drawMode} editingBoundary={editingBoundary} editingLoteId={editingLoteId} onboardingStep={onboardingStep} guardando={guardando} onToggleShowInactivos={() => setShowInactivos((v) => !v)} onSelectLote={selectLote} onOpenFicha={openFicha} onStartDrawEstablecimiento={startEstablecimiento} onStartDrawLote={startLote} onCancelDraw={cancelDraw} onStartEditBoundary={() => { if (!editingLoteId) { setEditingBoundary(true); mapRef.current?.startEditBoundary(); } }} onSaveEditBoundary={() => mapRef.current?.saveEditBoundary()} onCancelEditBoundary={() => { mapRef.current?.cancelEditBoundary(); setEditingBoundary(false); }} onStartEditLote={startEditLote} onSaveEditLote={saveEditLote} onCancelEditLote={cancelEditLote} onRenameEstablecimiento={() => setModal({ type: "rename-establecimiento" })} onDeleteEstablecimiento={() => setNotice({ kind: "warning", text: "La eliminación del establecimiento está pendiente." })} onRenameLote={(id) => setModal({ type: "rename-lote", loteId: id })} onToggleActivoLote={toggleActivo} onDeleteLote={(id) => setModal({ type: "confirm-delete-lote", loteId: id })} usuarioNombre={usuario.username} onLogout={onLogout} panelClima={<ClimaPanel lotesActivos={lotesActivos} resultados={resultadosClima} consultando={climaConsultando} selectedLoteId={selectedLoteId} onActualizar={actualizarClima} onSelectLote={selectLote} />} panelCondicion={<CondicionPanel lotesActivos={lotesActivos} resultados={resultados} analizando={analizando} ultimoAnalisis={ultimoAnalisis} errorGlobal={errorAnalisis} credencialesOk={credencialesOk} selectedLoteId={selectedLoteId} onAnalizar={analizar} onSelectLote={selectLote} />} />
     <main className="map-area">
       {notice && <div className={`notice notice-${notice.kind}`}><span>{notice.text}</span><button className="notice-close" onClick={() => setNotice(null)}>×</button></div>}
       <MapView ref={mapRef} establecimiento={establecimiento} lotesVisibles={lotesVisiblesParaMapa} selectedLoteId={selectedLoteId} condicionPorLote={condicionPorLote} onEstablecimientoDrawn={onEstablecimientoDrawn} onLoteDrawn={onLoteDrawn} onBoundaryEdited={onBoundaryEdited} onLoteEdited={onLoteEdited} onSelectLote={selectLote} />
