@@ -215,7 +215,8 @@ onboarding visual completo quedan para etapas posteriores.
 ```
 backend/src/services/copernicus.ts OAuth, TLS y transporte de Sentinel Hub
 backend/src/copernicus/            requests, evalscripts, parsing y scoring provisional
-backend/src/routes/satelite.ts     actualización individual y batch
+backend/src/controllers/           handlers HTTP, validación y coordinación con DB/servicios
+backend/src/routes/                método, path, middleware y controller de los endpoints
 backend/.env                       credenciales opcionales de CDSE (gitignored)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 

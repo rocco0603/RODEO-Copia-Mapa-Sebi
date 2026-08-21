@@ -6,9 +6,9 @@
 
 Este recorrido no describe un backend ideal ni una aplicación genérica. Sigue imports, rutas, consultas SQL, servicios, clientes frontend, migraciones, pruebas y CI de este RODEO.
 
-Para prepararlo se revisaron 58 archivos de backend dentro del alcance pedido:
+Para prepararlo se revisaron 67 archivos de backend dentro del alcance pedido:
 
-- 34 archivos en `backend/src/`;
+- 43 archivos en `backend/src/`;
 - 2 migraciones;
 - 5 scripts;
 - 12 archivos de tests;
@@ -47,9 +47,13 @@ No se leyó ni se documenta `node_modules`, y no se usaron secretos de archivos 
 └───────────────────────┬─────────────────────────────────────┘
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Routes                                                      │
+│ Routes: método + path + middleware + controller             │
 │ auth, establecimiento, lotes, historial, satélite, clima,   │
 │ Copernicus, notificaciones y health                         │
+└───────────────────────┬─────────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Controllers: validación HTTP, ownership, SQL y respuesta    │
 └──────────────┬──────────────────┬───────────────────────────┘
                │                  │
                ▼                  ▼
@@ -73,10 +77,11 @@ No se leyó ni se documenta `node_modules`, y no se usaron secretos de archivos 
 
 1. React nunca abre una conexión a PostgreSQL. Llama por HTTP a Express.
 2. En desarrollo, Vite sólo reenvía las rutas `/api`; no ejecuta la lógica del backend.
-3. Express autentica, valida ownership y ejecuta SQL mediante el pool de `pg`.
-4. Express también es el único que habla con Copernicus y Open-Meteo.
-5. PostgreSQL conserva usuarios, polígonos, históricos y notificaciones.
-6. Neon no es otra base distinta: es el servicio donde corre el PostgreSQL actual.
+3. Los routers de Express seleccionan el controller y aplican middleware como autenticación o rate limit.
+4. Los controllers validan el caso HTTP, comprueban ownership y ejecutan SQL mediante el pool de `pg` o llaman servicios.
+5. El backend, a través de sus servicios, es el único que habla con Copernicus y Open-Meteo.
+6. PostgreSQL conserva usuarios, polígonos, históricos y notificaciones.
+7. Neon no es otra base distinta: es el servicio donde corre el PostgreSQL actual.
 
 ## 2. Cinco recorridos completos de requests reales
 
@@ -87,8 +92,8 @@ No se leyó ni se documenta `node_modules`, y no se usaron secretos de archivos 
 3. `src/api/client.ts` agrega `Content-Type: application/json`, `credentials: "include"` y construye la URL con `apiUrl()`.
 4. En desarrollo, `vite.config.ts` proxifica `/api/auth` a `http://localhost:3001`.
 5. `backend/src/app.ts` asigna request ID, aplica Helmet, CORS y el parser JSON de 1 MB. Luego entrega la request a `authRouter`.
-6. `backend/src/routes/auth.ts` aplica `authRateLimiter` a login y registro. `credenciales()` exige username no vacío y password de al menos 8 caracteres.
-7. La ruta consulta `usuarios` con `WHERE username = $1`. `$1` es un parámetro, no texto concatenado.
+6. `backend/src/routes/auth.ts` aplica `authRateLimiter` a login y registro y delega en `controllers/auth.ts`. Allí `credenciales()` exige username no vacío y password de al menos 8 caracteres.
+7. El controller consulta `usuarios` con `WHERE username = $1`. `$1` es un parámetro, no texto concatenado.
 8. `bcrypt.compare(password, user.password_hash)` compara la clave recibida con el hash guardado. Si no existe el usuario o no coincide, ambos casos producen el mismo `401 INVALID_CREDENTIALS`.
 9. `crearToken(user.id)`, en `backend/src/auth/session.ts`, firma un JWT cuyo `subject` (`sub`) es el UUID del usuario y cuya expiración es de 7 días.
 10. `guardarCookie()` envía `Set-Cookie: rodeo_session=...` con `Path=/`, `HttpOnly`, `SameSite` configurable, `Max-Age` de 7 días y `Secure` en producción.
@@ -113,7 +118,7 @@ Resumen de lo que queda en cada lugar:
 3. `crearLote(polygon)` de `src/api/rodeo.ts` envía `POST /api/lotes` con `{ polygon, apodo }`.
 4. `lotesRouter.use(requiereAutenticacion)` obliga a pasar por el middleware de sesión.
 5. `requiereAutenticacion` lee la cookie, verifica firma/expiración del JWT y vuelve a consultar `usuarios` por `payload.sub`. Coloca el DTO en `req.usuario`.
-6. La ruta valida estructura GeoJSON con `esPolygonFeature()` y el tipo de `apodo`.
+6. La ruta delega en `controllers/lotes.ts`; `crearLote()` valida estructura GeoJSON con `esPolygonFeature()` y el tipo de `apodo`.
 7. Obtiene un client del pool e inicia `BEGIN`.
 8. Consulta el establecimiento del usuario con `FOR UPDATE`. Este lock serializa creaciones concurrentes para que no asignen el mismo número.
 9. `estaContenido(nuevo, establecimiento)` usa Turf; si falla devuelve `LOT_OUTSIDE_ESTABLISHMENT`.
@@ -133,9 +138,9 @@ Este flujo sí centraliza consulta, interpretación y persistencia en un solo re
 1. El botón de `src/pages/LotePage.tsx` ejecuta `actualizarSatelite()` y bloquea acciones paralelas mediante `ocupado`.
 2. Llama `actualizarSateliteLote(lote.id)` de `src/copernicus/api.ts`.
 3. El cliente envía `POST /api/lotes/:id/satelite/actualizar`, sin geometría, evalscript ni credenciales.
-4. `sateliteRouter` exige autenticación, valida el formato UUID y ejecuta `obtenerLotes([id], usuarioId)`.
+4. `sateliteRouter` exige autenticación y delega en `controllers/satelite.ts`; `actualizarSateliteLote()` valida el formato UUID y ejecuta `obtenerLotes([id], usuarioId)`.
 5. La consulta une `lotes` con `establecimientos`, filtra por `e.user_id`, descarta `deleted_at IS NOT NULL` y obtiene el polígono desde PostgreSQL. Un lote ajeno y uno inexistente producen el mismo `404 LOT_NOT_FOUND`.
-6. La ruta fija una sola `referencia = new Date()` para análisis y `consulted_at`.
+6. El controller fija una sola `referencia = new Date()` para análisis y `consulted_at`.
 7. `analizadorSatelital.analizarLotes()` de `backend/src/copernicus/analizar.ts` limita el trabajo a dos lotes simultáneos. Para cada lote, `consultarLote()` lanza en paralelo la consulta óptica y la radar.
 8. `cuerpoPeticion()` arma el body de Sentinel-2 L2A; `cuerpoPeticionRadar()` arma el de Sentinel-1 GRD. Ambos incluyen el polígono guardado, CRS84, intervalos `P1D`, resolución `0.0002` grados y percentil 50.
 9. `backend/src/services/copernicus.ts` verifica que existan ambas credenciales. Si faltan lanza internamente `ApiError(503, COPERNICUS_NOT_CONFIGURED)`; `consultarOptico()` lo captura y lo convierte en un `ResultadoLote` con `estado: "error"`. Por eso la actualización HTTP actual responde 200 con error por lote, sin impedir que arranque el resto de RODEO.
@@ -145,9 +150,9 @@ Este flujo sí centraliza consulta, interpretación y persistencia en un solo re
 13. Para óptica se toma la observación válida más reciente de una ventana de 45 días y se arma una tendencia con las últimas 6 fechas válidas. Para radar se usa una ventana de 20 días.
 14. `calcularPuntaje()`, `categorizar()` y `generarAlertas()` producen el resultado óptico provisional.
 15. Radar se usa como resultado principal sólo si existe y es estrictamente más reciente que la óptica, o si no hay óptica utilizable. Si hay una óptica válida más vieja, se conserva separada en `resultado.optico`.
-16. La ruta llama `persistirResultadoSatelital(resultado, referencia)`. Los estados `error` y `sin-datos` no crean filas.
+16. El controller llama `persistirResultadoSatelital(resultado, referencia)`. Los estados `error` y `sin-datos` no crean filas.
 17. La persistencia abre una transacción por lote. `medicionesDesdeResultado()` crea una fila S2, una S1, o ambas según el resultado. `guardarMedicionSatelital()` hace upsert por `(lote_id, fuente, observed_at)`.
-18. Al hacer `COMMIT`, la ruta devuelve `{ resultado }`.
+18. Al hacer `COMMIT`, el controller devuelve `{ resultado }`.
 19. `LotePage` sólo considera exitosos `estado: "ok"` o `estado: "radar"` y luego ejecuta `cargarDatos()` para recargar estado e históricos desde PostgreSQL.
 
 Importante: la Statistical API puede devolver muchos intervalos, pero el código persiste la observación seleccionada más reciente de cada fuente relevante, no cada intervalo devuelto en esa consulta.
@@ -158,14 +163,14 @@ El flujo actual tiene dos requests backend deliberadamente separados: uno consul
 
 1. En la ficha, `LotePage.actualizarClima()` llama `consultarClimaLotes([lote])`. En el mapa, `RodeoApp.actualizarClima()` envía todos los lotes activos.
 2. `src/clima/api.ts` envía sólo `{ loteIds }` a `POST /api/clima/consultar`.
-3. `climaRouter` autentica, valida entre 1 y 100 UUID, elimina repetidos y consulta ownership + polígonos en PostgreSQL.
+3. `climaRouter` autentica y delega en `controllers/clima.ts`; `consultarClima()` valida entre 1 y 100 UUID, elimina repetidos y consulta ownership + polígonos en PostgreSQL.
 4. `OpenMeteoClient.consultar()` calcula con Turf el centroide de cada lote. Cambia `[lng, lat]` de GeoJSON a `[lat, lng]` para la API.
 5. Construye una sola URL multi-coordinate: latitudes y longitudes separadas por comas, redondeadas a 4 decimales.
 6. Pide `precipitation_sum`, `temperature_2m_max` y `temperature_2m_min`, con `past_days=7`, `forecast_days=5` y `timezone=auto`.
 7. Tiene timeout de 20 segundos. Convierte la respuesta en un `ResultadoClimaLote` por ID y calcula sumas/categoría.
 8. `/api/clima/consultar` responde `{ resultados }`; todavía no inserta filas por sí mismo.
 9. Si el resultado es `ok`, el frontend llama `guardarConsultaClima(loteId, resultado, origen)` y envía `POST /api/lotes/:id/clima`.
-10. `historialRouter` vuelve a autenticar y comprobar ownership. Para origen `automatico`, evita otra inserción si existe una consulta cuyo `created_at` servidor sea de la última hora. Una consulta `manual` siempre puede crear snapshot.
+10. `historialRouter` vuelve a autenticar y delega en `controllers/historial.ts`, donde `crearConsultaClima()` comprueba ownership. Para origen `automatico`, evita otra inserción si existe una consulta cuyo `created_at` servidor sea de la última hora. Una consulta `manual` siempre puede crear snapshot.
 11. En una transacción inserta una fila en `consultas_clima` y luego una fila por fecha en `dias_clima`. Error en cualquier día implica `ROLLBACK` de todo el snapshot.
 12. La ficha vuelve a ejecutar `cargarDatos()`. En `RodeoApp`, la persistencia se hace con `Promise.allSettled`; si una falla, el clima puede verse en memoria y se muestra un aviso de que no se guardó.
 
@@ -181,7 +186,7 @@ La carga automática de clima de `RodeoApp` ocurre cuando cambia `establecimient
    - `GET /api/lotes/:id/mediciones-satelitales?limit=20&offset=...`;
    - `GET /api/lotes/:id/clima?limit=20&offset=...`;
    - `GET /api/lotes/:id/usos?limit=20&offset=...`.
-5. Cada endpoint valida sesión y ownership mediante `loteDelUsuario()` o el servicio de estado.
+5. Cada router valida sesión y su controller comprueba ownership mediante `loteDelUsuario()` o el servicio de estado.
 6. El estado obtiene la óptica más reciente, el radar más reciente, la consulta climática más reciente y el último uso. No llama APIs externas.
 7. El historial satelital devuelve S1 y S2 separados; clima devuelve snapshots con sus días; usos devuelve eventos manuales.
 8. `diasDescanso` se calcula en lectura como diferencia de fechas calendario entre el último uso y hoy. No existe una columna de descanso.
@@ -192,7 +197,8 @@ La carga automática de clima de `RodeoApp` ocurre cuando cambia `establecimient
 | Capa | Ejemplo real | Responsabilidad |
 |---|---|---|
 | Frontend API client | `src/api/client.ts` | Uniforma URL, cookie, JSON y errores para el navegador. |
-| Route | `routes/lotes.ts` | Define método/path, valida el caso HTTP, coordina DB y responde. |
+| Route | `routes/lotes.ts` | Define `Router`, método, path, middleware y controller, respetando el orden de matching. |
+| Controller | `controllers/lotes.ts` | Lee `req`, valida el caso HTTP, coordina DB/servicios y construye la respuesta. |
 | Middleware | `auth/middleware.ts` | Ejecuta una tarea transversal antes de la ruta: autenticar y cargar `req.usuario`. |
 | Service | `services/open-meteo.ts` | Encapsula una integración o operación reutilizable fuera del detalle HTTP de Express. |
 | Domain logic | `copernicus/scoring.ts`, `geometry.ts` | Reglas y cálculos del dominio, sin decidir una URL Express. |
@@ -200,20 +206,20 @@ La carga automática de clima de `RodeoApp` ocurre cuando cambia `establecimient
 | DB | `db/pool.ts` y migraciones | Conexión y estructura persistente. |
 | HTTP helper | `http/errors.ts`, `http/query.ts` | Comportamiento común para errores, query params, logging y request IDs. |
 
-Separarlas permite probar algoritmos sin red, cambiar la forma de despliegue sin tocar scoring y reutilizar el mismo armado de estado en una ruta individual y otra batch. Poner todo en una ruta mezclaría HTTP, seguridad, SQL, datos externos y reglas matemáticas; cualquier cambio tendría más efectos laterales.
+Separarlas permite leer el catálogo HTTP sin atravesar SQL, probar algoritmos sin red, cambiar la forma de despliegue sin tocar scoring y reutilizar el mismo armado de estado en una ruta individual y otra batch. Los controllers siguen siendo una capa HTTP sencilla: no se introdujeron repositories, clases ni otra abstracción de dominio.
 
 ## 4. Express en este proyecto
 
 Express es la capa que recibe requests HTTP y decide qué código ejecutar.
 
 - `app`: la instancia creada con `express()` en `app.ts`.
-- `Router`: subaplicaciones como `authRouter` o `lotesRouter` que agrupan endpoints.
+- `Router`: subaplicaciones como `authRouter` o `lotesRouter` que agrupan endpoints y los conectan con middleware/controllers.
 - `req`: contiene `body`, `params`, `query`, headers y las extensiones `usuario`/`requestId`.
 - `res`: fija status, headers y respuesta JSON o vacía.
 - `next`: pasa al middleware siguiente o al manejador de errores.
 - `app.use`: monta middleware global o routers bajo un prefijo.
 
-Ejemplos reales:
+Los routers no interpretan payloads ni ejecutan SQL: esas operaciones están en los controllers. Ejemplos reales dentro de controllers:
 
 - route param: `req.params.id` en `PATCH /api/lotes/:id`;
 - query params: `req.query.limit`, `offset`, `desde`, `hasta` y `fuente` en históricos;
@@ -808,7 +814,7 @@ Casos reales:
 | 500 | error inesperado o geometría guardada inválida durante satélite |
 | 503 | DB no lista en `/health` o `/ready` |
 
-El servicio Copernicus crea errores internos 502/503, pero `AnalizadorSatelital` los captura. La ruta de actualización vigente responde HTTP 200 con un `ResultadoLote` `estado: "error"`; no expone normalmente esos status upstream como respuesta HTTP.
+El servicio Copernicus crea errores internos 502/503, pero `AnalizadorSatelital` los captura. El controller de actualización vigente responde HTTP 200 con un `ResultadoLote` `estado: "error"`; no expone normalmente esos status upstream como respuesta HTTP.
 
 ## 23. Qué protege hoy RODEO
 
@@ -988,7 +994,7 @@ AuthScreen.enviar
   → api/auth.login
   → pedir + Vite proxy
   → POST /api/auth/login
-  → rate limit → credenciales()
+  → route auth: rate limit → controller auth: credenciales()
   → SELECT usuarios → bcrypt.compare
   → JWT(sub=user.id) → Set-Cookie HttpOnly
   → DTO user → App authenticated
@@ -999,7 +1005,7 @@ AuthScreen.enviar
 ```text
 Leaflet polygon → RodeoApp.onLoteDrawn
   → validación UX → api/rodeo.crearLote
-  → auth middleware → BEGIN
+  → route lotes: auth → controller lotes: BEGIN
   → establecimiento FOR UPDATE
   → Turf contenido/solapamiento
   → MAX(numero)+1 → INSERT lote
@@ -1011,7 +1017,7 @@ Leaflet polygon → RodeoApp.onLoteDrawn
 
 ```text
 LotePage → POST /lotes/:id/satelite/actualizar
-  → auth + ownership + polygon DB
+  → route satélite: auth → controller satélite: ownership + polygon DB
   → AnalizadorSatelital
        ├─ S2 45 d → evalscript óptico → stats/scoring
        └─ S1 20 d → evalscript radar → RVI
@@ -1024,11 +1030,11 @@ LotePage → POST /lotes/:id/satelite/actualizar
 
 ```text
 React → POST /api/clima/consultar {IDs}
-  → auth + ownership + polígonos
+  → route clima: auth → controller clima: ownership + polígonos
   → centroides → una llamada Open-Meteo
   → resultados por lote → React
   → POST /api/lotes/:id/clima por resultado ok
-  → BEGIN → consulta + días → COMMIT
+  → route historial: auth → controller historial: BEGIN → consulta + días → COMMIT
   → recarga estado/historial
 ```
 
@@ -1041,6 +1047,7 @@ React → POST /api/clima/consultar {IDs}
        ├─ /mediciones-satelitales?limit=20...
        ├─ /clima?limit=20...
        └─ /usos?limit=20...
+  → routes lotes/historial: auth → controllers: ownership + consultas
   → PostgreSQL → tarjetas/tablas/paginadores
 ```
 
@@ -1049,13 +1056,13 @@ React → POST /api/clima/consultar {IDs}
 ```text
 Sidebar habilita useNotificaciones
   → GET /api/notificaciones
-  → auth + 3 queries paralelas
+  → route notificaciones: auth → controller: 3 queries paralelas
   → items/total/noLeidas
   → PATCH una o todas
   → UPDATE read_at → estado React/badge
 ```
 
-## 30. Inventario de `backend/src`: los 34 archivos
+## 30. Inventario de `backend/src`: los 43 archivos
 
 ### Raíz, configuración y DB
 
@@ -1092,7 +1099,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/db/pool.ts`
 
 - **Existe para:** centralizar conexión PostgreSQL y parser `DATE`.
-- **Lo importan:** middleware, routers, servicios, servidor y scripts indirectamente.
+- **Lo importan:** middleware, controllers, servicios, servidor y scripts indirectamente.
 - **Importa:** `pg` y `env`.
 - **Salida:** singleton `pool`.
 
@@ -1106,7 +1113,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/geometry.ts`
 
 - **Existe para:** reglas GeoJSON/Turf compartidas.
-- **Lo importan:** rutas de establecimiento, lotes, satélite y tests.
+- **Lo importan:** controllers de establecimiento, lotes y satélite, además de tests.
 - **Importa:** Turf y tipos GeoJSON.
 - **Funciones:** `esPolygonFeature`, `estaContenido`, `seSuperpone`.
 - **Entrada/salida:** valores/polígonos → type guard o booleano conservador.
@@ -1129,7 +1136,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/auth/session.ts`
 
 - **Existe para:** JWT y serialización de la cookie.
-- **Lo importan:** ruta auth y middleware.
+- **Lo importan:** controller auth y middleware.
 - **Importa:** jsonwebtoken, env y tipos Express.
 - **Funciones:** `crearToken`, `leerToken`, `verificarToken`, `guardarCookie`, `limpiarCookie`.
 - **Entrada/salida:** userId/request/response ↔ token/cabecera `Set-Cookie`.
@@ -1160,7 +1167,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/http/errors.ts`
 
 - **Existe para:** contrato uniforme de errores.
-- **Lo importan:** app, routers, middleware, servicios y helpers.
+- **Lo importan:** app, controllers, middleware, servicios y helpers.
 - **Funciones/clases:** `ApiError`, `errorResponse`.
 - **Entrada/salida:** error desconocido → status + body seguro.
 
@@ -1174,7 +1181,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/http/query.ts`
 
 - **Existe para:** validar paginación, booleanos y fechas de query.
-- **Lo importan:** historial/notificaciones y tests.
+- **Lo importan:** controllers de historial/notificaciones y tests.
 - **Funciones:** `leerPaginacion`, `leerBooleano`, `leerRangoCalendario`.
 - **Entrada/salida:** `req.query` → objetos tipados o `ApiError 400`.
 
@@ -1190,7 +1197,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/copernicus/types.ts`
 
 - **Existe para:** DTOs de estadísticas, condición y resultado discriminado.
-- **Lo importan:** analizador, scoring, persistencia y ruta satélite.
+- **Lo importan:** analizador, scoring, persistencia y controller satélite.
 - **Salida:** tipos como `ResultadoLote`, `CondicionLote`, `CondicionRadar` y `LoteSatelital`.
 
 #### `backend/src/copernicus/evalscript.ts`
@@ -1209,7 +1216,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/copernicus/analizar.ts`
 
 - **Existe para:** armar requests, interpretar stats, seleccionar S2/S1 y controlar concurrencia.
-- **Lo importa:** ruta satélite y tests.
+- **Lo importa:** controller satélite y tests.
 - **Importa:** servicio Copernicus, evalscripts, scoring, errores y tipos.
 - **Funciones/clase:** bodies, `aObservacion`, `aObservacionRadar`, `AnalizadorSatelital`, singleton.
 - **Entrada/salida:** lotes + referencia temporal → `ResultadoLote[]`.
@@ -1227,7 +1234,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/services/mediciones-satelitales.ts`
 
 - **Existe para:** mapear resultados a filas y hacer upsert/transacción.
-- **Lo importan:** rutas satélite e historial.
+- **Lo importan:** controllers de satélite e historial.
 - **Importa:** pool y tipos satelitales.
 - **Funciones:** `guardarMedicionSatelital`, `medicionesDesdeResultado`, `persistirResultadoSatelital`.
 - **Entrada/salida:** resultado o payload validado → fila retornada/efecto persistente.
@@ -1235,7 +1242,7 @@ Sidebar habilita useNotificaciones
 #### `backend/src/services/open-meteo.ts`
 
 - **Existe para:** centroides, request multi-coordinate e interpretación climática.
-- **Lo importa:** ruta clima y tests.
+- **Lo importa:** controller clima y tests.
 - **Importa:** Turf y GeoJSON.
 - **Clase:** `OpenMeteoClient`; `reemplazarTransporte` habilita tests; singleton `openMeteo`.
 - **Entrada/salida:** lotes con polygon → mapa `loteId → ResultadoClimaLote`.
@@ -1243,75 +1250,144 @@ Sidebar habilita useNotificaciones
 #### `backend/src/services/estado-lotes.ts`
 
 - **Existe para:** estado objetivo individual/batch sin N+1.
-- **Lo importan:** rutas lotes e historial.
+- **Lo importan:** controllers de lotes e historial.
 - **Importa:** pool y helpers de fecha.
 - **Función:** `obtenerEstadosDeLotes(loteIds, referencia?)`.
 - **Entrada/salida:** IDs visibles → `EstadoLote[]` derivado.
 
+### Controllers
+
+Los nueve controllers reflejan uno a uno los nueve routers. Son funciones de Express, no clases: conservan exactamente la validación, SQL, transacciones, llamadas a servicios y respuestas que antes estaban dentro de cada archivo de rutas.
+
+#### `backend/src/controllers/health.ts`
+
+- **Existe para:** ejecutar liveness/readiness y responder sin exponer detalles de DB.
+- **Lo importa:** route health.
+- **Importa:** pool y tipos Express.
+- **Funciones:** `liveness`, `readiness`.
+
+#### `backend/src/controllers/auth.ts`
+
+- **Existe para:** registro, login, logout y consulta de sesión.
+- **Lo importa:** route auth.
+- **Importa:** bcrypt, pool, sesión y errores.
+- **Funciones:** `registrar`, `iniciarSesion`, `cerrarSesion`, `obtenerSesion`.
+
+#### `backend/src/controllers/establecimiento.ts`
+
+- **Existe para:** obtener, crear y editar el único establecimiento del usuario.
+- **Lo importa:** route establecimiento.
+- **Importa:** pool, geometría y errores.
+- **Funciones:** `obtenerEstablecimiento`, `crearEstablecimiento`, `actualizarEstablecimiento`.
+
+#### `backend/src/controllers/lotes.ts`
+
+- **Existe para:** listado, creación, edición, soft delete y estado batch.
+- **Lo importa:** route lotes.
+- **Importa:** pool, geometría, estado de lotes y errores.
+- **Funciones:** `obtenerEstadoLotes`, `obtenerLotes`, `crearLote`, `actualizarLote`, `eliminarLote`; conserva las transacciones y locks existentes.
+
+#### `backend/src/controllers/satelite.ts`
+
+- **Existe para:** coordinar actualización satelital individual y batch segura.
+- **Lo importa:** route satélite.
+- **Importa:** pool, geometría, analizador, tipos y persistencia satelital.
+- **Funciones:** `actualizarSateliteLotes`, `actualizarSateliteLote`; no acepta geometrías ni evalscripts del browser.
+
+#### `backend/src/controllers/copernicus.ts`
+
+- **Existe para:** responder el estado opcional de configuración de Copernicus.
+- **Lo importa:** route Copernicus.
+- **Importa:** servicio Copernicus.
+- **Función:** `obtenerEstadoCopernicus`.
+
+#### `backend/src/controllers/clima.ts`
+
+- **Existe para:** validar ownership y coordinar el gateway de Open-Meteo sin persistir.
+- **Lo importa:** route clima.
+- **Importa:** pool, errores y servicio Open-Meteo.
+- **Función:** `consultarClima`.
+
+#### `backend/src/controllers/historial.ts`
+
+- **Existe para:** persistencia/listados de satélite, clima y usos, además de estado e historial consolidados.
+- **Lo importa:** route historial.
+- **Importa:** pool, fechas/query, estado, errores y persistencia satelital.
+- **Funciones:** ocho handlers públicos; conserva ownership, paginación, dedupe climático y la transacción del snapshot.
+
+#### `backend/src/controllers/notificaciones.ts`
+
+- **Existe para:** listar y marcar notificaciones del usuario.
+- **Lo importa:** route notificaciones.
+- **Importa:** pool, query params y errores.
+- **Funciones:** `obtenerNotificaciones`, `marcarTodasLeidas`, `marcarNotificacionLeida`.
+
 ### Routers
+
+Cada router queda como catálogo declarativo: crea su `Router`, aplica el mismo middleware en el mismo lugar y conecta método/path con un controller. No contiene SQL ni lógica de negocio.
 
 #### `backend/src/routes/health.ts`
 
 - **Existe para:** liveness/readiness pública.
 - **Lo importa:** app.
-- **Importa:** Router y pool.
-- **Salida:** `healthRouter`; 200 o 503 sin secretos.
+- **Importa:** Router y controller health.
+- **Salida:** `healthRouter` con sus tres paths públicos en el orden original.
 
 #### `backend/src/routes/auth.ts`
 
 - **Existe para:** register/login/logout/me.
 - **Lo importa:** app.
-- **Importa:** bcrypt, pool, sesión, auth middleware, rate limit y errores.
-- **Entrada/salida:** credenciales/cookie → DTO público/cookie/error.
+- **Importa:** controller auth, auth middleware, rate limit y `asyncHandler`.
+- **Cableado:** conserva rate limit sólo en register/login y autenticación sólo en `/me`.
 
 #### `backend/src/routes/establecimiento.ts`
 
 - **Existe para:** GET/POST/PATCH del único establecimiento.
 - **Lo importa:** app.
-- **Importa:** pool, auth, geometry, async/error helpers.
-- **Entrada/salida:** nombre/polygon → DTO; valida lotes al cambiar límite.
+- **Importa:** controller establecimiento, auth y `asyncHandler`.
+- **Cableado:** autenticación para todo el router y los tres endpoints originales.
 
 #### `backend/src/routes/lotes.ts`
 
 - **Existe para:** listado, creación, edición, soft delete y estado batch.
 - **Lo importa:** app.
-- **Importa:** pool, auth, geometry, estado y HTTP helpers.
-- **Entrada/salida:** mutaciones/query `incluirInactivos` → DTOs/estado; usa transacciones.
+- **Importa:** controller lotes, auth y `asyncHandler`.
+- **Cableado:** mantiene `/estado` antes de `/:id` y los cinco endpoints originales.
 
 #### `backend/src/routes/satelite.ts`
 
 - **Existe para:** actualización satelital individual y batch segura.
 - **Lo importa:** app bajo `/api/lotes`.
-- **Importa:** auth, DB, geometry, analizador y persistencia.
-- **Entrada/salida:** IDs → resultados; no acepta geometrías/evalscripts del browser.
+- **Importa:** controller satélite, auth y `asyncHandler`.
+- **Cableado:** mantiene batch antes del path individual.
 
 #### `backend/src/routes/copernicus.ts`
 
 - **Existe para:** exponer sólo estado de configuración.
 - **Lo importa:** app.
-- **Importa:** auth y servicio Copernicus.
-- **Salida:** `{ configurado: boolean }`.
+- **Importa:** controller Copernicus y auth.
+- **Cableado:** `GET /estado` autenticado.
 
 #### `backend/src/routes/clima.ts`
 
 - **Existe para:** gateway autenticado de Open-Meteo.
 - **Lo importa:** app.
-- **Importa:** pool, auth, errores y servicio Open-Meteo.
-- **Entrada/salida:** loteIds → resultados interpretados; no persiste.
+- **Importa:** controller clima, auth y `asyncHandler`.
+- **Cableado:** `POST /consultar` autenticado.
 
 #### `backend/src/routes/historial.ts`
 
 - **Existe para:** persistencia/listados satélite-clima-usos, estado individual e historial compatible.
 - **Lo importa:** app bajo `/api/lotes`.
-- **Importa:** pool, auth, fechas/query, estado y persistencia satelital.
-- **Entrada/salida:** payloads/filtros → filas DTO y metadata paginada; clima usa transacción.
+- **Importa:** controller historial, auth y `asyncHandler`.
+- **Cableado:** conserva los ocho endpoints y su orden exacto.
 
 #### `backend/src/routes/notificaciones.ts`
 
 - **Existe para:** listar y marcar notificaciones del usuario.
 - **Lo importa:** app.
-- **Importa:** pool, auth, query y errores.
-- **Entrada/salida:** paginación/filtro/ID → items, conteos o DTO actualizado.
+- **Importa:** controller notificaciones, auth y `asyncHandler`.
+- **Cableado:** mantiene `/leidas` antes de `/:id/leida`.
 
 ## 31. Diez conceptos imprescindibles
 
@@ -1442,7 +1518,8 @@ Deberías poder explicar sin mirar:
 - **JSON:** formato de datos de bodies y respuestas.
 - **Express:** framework HTTP del backend.
 - **App Express:** configuración de middleware y rutas, sin implicar puerto abierto.
-- **Router:** agrupador modular de endpoints.
+- **Router:** catálogo modular que conecta método/path, middleware y controller.
+- **Controller:** handler HTTP que valida la request, coordina DB/servicios y construye la respuesta.
 - **Middleware:** función intermedia que procesa `req/res/next`.
 - **Route param:** parte variable del path, como `:id`.
 - **Query param:** opción en la URL, como `?limit=20`.
@@ -1534,24 +1611,24 @@ Deberías poder explicar sin mirar:
 
 | Si modifico... | Probablemente debo revisar... | Motivo |
 |---|---|---|
-| Auth/cookie | `auth/*`, route auth, `App`, API client, CORS/SameSite, tests | sesión cruza browser, middleware y DB |
+| Auth/cookie | `auth/*`, route/controller auth, `App`, API client, CORS/SameSite, tests | sesión cruza browser, middleware y DB |
 | `usuarios`/onboarding | migración, auth DTO, middleware, creación de lote, `RodeoApp` | el estado se calcula en varios puntos |
 | Schema DB | migraciones, queries, DTOs, fixtures, cleanup/verify scripts | código y estructura deben coincidir |
-| Geometría | `geometry.ts`, rutas establecimiento/lotes, `geo.ts`, MapEngine y tests | hay validación UX y autoridad backend |
+| Geometría | `geometry.ts`, controllers establecimiento/lotes, `geo.ts`, MapEngine y tests | hay validación UX y autoridad backend |
 | Lotes | API rodeo, `RodeoApp`, ficha, satélite/clima/estado, ownership | es entidad central de casi todo historial |
 | Soft delete | todas las queries de lote/historial/estado | olvidar `deleted_at IS NULL` puede reexponer datos |
 | Satélite | analyzer, evalscripts, scoring, servicio CDSE, persistencia, DTO frontend/tests | pipeline completo y dos fuentes físicas |
 | Clima | gateway, fachada frontend, persistencia histórica, estado/ficha/tests | consulta y guardado son requests separados |
 | Estado | servicio `estado-lotes`, endpoints individual/batch, tipos/ficha | no hay tabla que aisle el cambio |
-| Historial/paginación | `http/query`, route historial, `api/historial`, LotePage | filtros y metadata son contrato compartido |
-| Notificaciones | tabla, route, API, hook, Sidebar y tests | conteo global y página deben permanecer coherentes |
+| Historial/paginación | `http/query`, route/controller historial, `api/historial`, LotePage | filtros y metadata son contrato compartido |
+| Notificaciones | tabla, route/controller, API, hook, Sidebar y tests | conteo global y página deben permanecer coherentes |
 | API client | todas las fachadas frontend, auth cookie y deployments separados | es el punto único de URL/credentials/error |
 | CORS/proxy | `app.ts`, env, Vite, `VITE_API_BASE_URL`, cookies | cambia cómo llega el browser a Express |
 | Tests DB | `TEST_DATABASE_URL`, helpers, migraciones y CI | la limpieza es destructiva en la base indicada |
 
 ## 37. Segunda pasada: diferencias entre documentación y código
 
-Estas diferencias se reportan; no se corrigieron otros archivos porque esta tarea sólo crea este walkthrough.
+Estas diferencias se reportan como deudas históricas y no fueron corregidas por el refactor route/controller.
 
 1. **Cantidad de tablas:** partes de README/CODEX_START_HERE todavía dicen “siete tablas” o enumeran sólo las iniciales. El código/migraciones actuales tienen ocho por `usos_lote`.
 2. **`localStorage`:** README y `PROJECT_DIRECTION.md` conservan párrafos que dicen que la migración de establecimiento/lotes es futura o que el mapa aún depende de `localStorage`. El frontend vigente carga y muta por API/Neon, sin fallback.
@@ -1579,10 +1656,11 @@ Estas diferencias se reportan; no se corrigieron otros archivos porque esta tare
 
 ### Verificación final del inventario
 
-- Archivos `backend/src` inventariados: 34 de 34.
+- Archivos `backend/src` inventariados: 43 de 43.
 - Endpoints contados desde declaraciones reales de routers: 30.
 - Tablas contadas desde migraciones: 8.
 - Routers montados en `app.ts`: 9.
+- Controllers conectados desde esos routers: 9.
 - Flujos pedidos seguidos de punta a punta: 5.
 - Diagramas compactos pedidos: 6.
 - Preguntas de oral: 60.
