@@ -168,35 +168,27 @@ Respuesta puede ser `204`.
 
 ## Satélite
 
-Hay dos capas posibles durante la migración:
-
-1. conservar temporalmente la consulta actual desde frontend y agregar un endpoint para persistir resultados;
-2. objetivo final: backend consulta Copernicus, persiste y responde.
-
-Se prefiere llegar a la opción 2.
-
-### `POST /api/lotes/:id/condicion/actualizar`
-
-Objetivo final:
-
-- consultar Copernicus para ese lote;
-- guardar observaciones nuevas sin duplicar;
-- calcular/devolver condición actual;
-- respetar la separación Sentinel-2 / Sentinel-1.
-
-### `GET /api/lotes/:id/condicion`
-
-Devuelve la condición más reciente disponible y el historial necesario para gráficos.
+La opción backend-owned ya está implementada. Los endpoints de actualización
+son `POST /api/lotes/:id/satelite/actualizar` y
+`POST /api/lotes/satelite/actualizar`; el navegador no puede insertar
+mediciones históricas crudas.
 
 ### `GET /api/lotes/:id/mediciones-satelitales`
 
-Devuelve historial, con filtros opcionales por fecha/fuente más adelante.
+Devuelve historial paginado, con filtros por fecha y fuente.
 
 ## Clima
 
 ### `POST /api/lotes/clima/actualizar`
 
-Puede actualizar todos los lotes activos del establecimiento, conservando la optimización actual de una consulta multi-coordenada a Open-Meteo.
+Recibe `{ "loteIds": [...], "origen": "automatico" | "manual" }`, valida
+ownership de todos y conserva una única consulta multi-coordenada a Open-Meteo.
+
+### `POST /api/lotes/:id/clima/actualizar`
+
+Recibe sólo `{ "origen": "automatico" | "manual" }`. El backend carga el
+polígono, consulta, interpreta y persiste; no acepta valores meteorológicos del
+cliente.
 
 Debe persistir:
 
@@ -205,11 +197,7 @@ Debe persistir:
 
 ### `GET /api/lotes/:id/clima`
 
-Devuelve último snapshot + días.
-
-### `GET /api/lotes/:id/clima/historial`
-
-Devuelve snapshots anteriores cuando la UI de historial los necesite.
+Devuelve historial paginado de snapshots con días y origen.
 
 ## Notificaciones
 
@@ -265,8 +253,8 @@ sin incluir body, cookies, headers de autorización ni secretos.
 
 ## Estado de implementación
 
-Auth, Establecimiento, Lotes, historial, actualización satelital, gateway de
-Open-Meteo y notificaciones base ya están implementados. La sesión usa la
+Auth, Establecimiento, Lotes, historial y actualizaciones backend-owned de
+satélite/clima, además de notificaciones base, ya están implementados. La sesión usa la
 cookie HttpOnly `rodeo_session` y los errores usan `{ "error": { "code",
 "message" } }`.
 
@@ -277,15 +265,17 @@ cookie HttpOnly `rodeo_session` y los errores usan `{ "error": { "code",
 El backend expone, siempre con sesión autenticada y validando pertenencia del
 lote:
 
-- `POST/GET /api/lotes/:id/mediciones-satelitales`;
-- `POST/GET /api/lotes/:id/clima`;
+- `GET /api/lotes/:id/mediciones-satelitales`;
+- `GET /api/lotes/:id/clima`;
 - `POST/GET /api/lotes/:id/usos`;
 - `GET /api/lotes/:id/historial`.
 
 Las mediciones satelitales usan upsert por `(lote_id, fuente, observed_at)`.
 Sentinel-1 y Sentinel-2 se guardan en filas separadas y los campos que no
 corresponden quedan `NULL`. Sólo se persisten resultados exitosos. Las
-consultas de clima y sus días se insertan en una transacción.
+consultas de clima y sus días se insertan en una transacción desde los
+endpoints `/clima/actualizar`. Los antiguos POST históricos de satélite y clima
+fueron retirados porque aceptaban observaciones generadas por el cliente.
 
 ## Estado real de integración
 
@@ -330,14 +320,20 @@ tres listados paginados existentes con 20 elementos por pÃ¡gina. Las
 actualizaciones satelitales desde la ficha usan el endpoint individual y luego
 recargan estado e historial. El frontend no convierte ni persiste mediciones.
 
-## `POST /api/clima/consultar`
+## Actualización climática centralizada
 
-Requiere autenticaciÃ³n y recibe `{ "loteIds": ["uuid", "uuid"] }`. Los IDs
-deben pertenecer al usuario y corresponder a lotes no eliminados; de lo
-contrario devuelve `LOT_NOT_FOUND` sin revelar datos ajenos. La respuesta es
-`{ "resultados": { "<loteId>": ResultadoClimaLote } }`. Express consulta
-Open-Meteo una sola vez por request multi-lote y devuelve el clima ya
-interpretado; la persistencia histÃ³rica sigue usando `POST /api/lotes/:id/clima`.
+Los endpoints individual y batch requieren autenticación. Todos los IDs deben
+pertenecer al usuario y corresponder a lotes no eliminados; de lo contrario se
+devuelve `LOT_NOT_FOUND` antes de llamar al proveedor. Express usa una
+referencia temporal del servidor, consulta Open-Meteo y persiste únicamente
+resultados válidos. La respuesta individual es `{ "resultado": ... }` y la
+batch `{ "resultados": { "<loteId>": ... } }`.
+
+Cada resultado `ok` incluye metadata `persistencia`. Para origen `automatico`,
+`guardado:false, omitido:"reciente"` indica que ya existía una automática
+creada en la última hora. El lock de la fila del lote hace atómico ese check;
+las manuales siempre pueden crear snapshots. Datos faltantes permanecen
+`null`; una respuesta completamente insuficiente no crea historial.
 
 ## Contratos actuales de historial
 
@@ -375,7 +371,7 @@ recientes del lote:
 
 Cuando existen datos, óptica y radar se seleccionan por separado y exponen
 sus estadísticas existentes junto con la edad objetiva de la observación.
-Clima expone la consulta más reciente, `horasDesdeConsulta` y el día actual
+Clima expone la consulta más reciente, su `origen`, `horasDesdeConsulta` y el día actual
 sólo si existe en `dias_clima`. El descanso es una diferencia de fechas
 calendario; sin uso es `null`.
 

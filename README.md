@@ -59,6 +59,8 @@ El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 - Health checks separados (`/api/health/live` y `/api/health/ready`), cierre ordenado del servidor y CI de frontend/backend en GitHub Actions.
 - Copernicus es opcional para levantar RODEO. Sus credenciales se leen únicamente en Express desde `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`; sin ellas, estado responde `configurado:false` y una actualización devuelve indisponibilidad controlada. No se usa prefijo `VITE_`.
 - El backend es dueño de la actualización satelital completa: obtiene lote/polígono desde PostgreSQL, construye las consultas S2/S1, interpreta, calcula el scoring provisional y persiste. El frontend sólo envía IDs y consume `ResultadoLote`.
+- El backend también es dueño de la actualización climática: consulta Open-Meteo, preserva datos faltantes como `null`, persiste consulta+días y responde en una sola operación.
+- `consultas_clima.origen` conserva `automatico`, `manual` o `legacy`; las automáticas se deduplican de forma transaccional por reloj del servidor.
 
 ### ESTADO TEMPORAL IMPORTANTE
 
@@ -67,13 +69,12 @@ backend/PostgreSQL de Neon. No se consulta `localStorage` para esos datos.
 
 ### EN IMPLEMENTACIÓN / SIGUIENTE ETAPA
 
-- persistencia completa server-side de Open-Meteo;
 - reglas automÃ¡ticas que generen notificaciones;
 - elegir proveedor, dominios y valores finales de CORS/cookies para el despliegue real, manteniendo el mapa actual.
 
 ### PENDIENTE Y FUERA DE ALCANCE
 
-Google OAuth, persistencia completa server-side de Open-Meteo, reglas automáticas de notificaciones y deploy (proveedor aún no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
+Google OAuth, reglas automáticas de notificaciones y deploy (proveedor aún no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
 
 ## Ficha completa de lote
 
@@ -100,12 +101,14 @@ Muestra Sentinel-2 y Sentinel-1 por separado, evolución NDVI, clima, descanso,
 registro de uso e historial por pestañas. También permite actualizar satélite,
 actualizar clima y registrar un uso sin modificar el mapa ni el modelo de datos.
 
-## Gateway Open-Meteo actual
+## Actualización Open-Meteo actual
 
-El navegador ya no llama a `api.open-meteo.com`. `POST /api/clima/consultar`
-recibe IDs autenticados; Express valida pertenencia, obtiene los polÃ­gonos
-desde Neon, calcula centroides, realiza una Ãºnica consulta multi-coordenada y
-devuelve los `ResultadoClimaLote` ya interpretados.
+El navegador ya no llama a `api.open-meteo.com` ni reenvía valores
+meteorológicos para guardarlos. `POST /api/lotes/:id/clima/actualizar` y
+`POST /api/lotes/clima/actualizar` reciben IDs y origen; Express valida
+pertenencia, obtiene los polígonos desde PostgreSQL, calcula centroides, hace
+la consulta multi-coordenada, persiste sólo resultados válidos y devuelve los
+`ResultadoClimaLote`.
 
 ## Notificaciones base
 
@@ -155,10 +158,10 @@ Además de `/api/health`, existen `/api/health/live` (sin DB) y
 backend aplica headers de seguridad, limita JSON a 1 MB y protege login y
 registro con un rate limit conservador en memoria.
 
-La migración inicial crea las siete tablas de dominio y sus índices básicos.
-La autenticación y la conexión del frontend ya están implementadas. La
-migración del establecimiento y los lotes desde `localStorage` hacia estas
-APIs queda como siguiente etapa.
+Las migraciones `001` y `002` crean las ocho tablas de dominio; `003` agrega el
+origen climático y el índice parcial del dedupe automático. `npm run db:verify`
+comprueba tablas, columnas/tipos, PK, FK, UNIQUE, CHECK e índices esenciales.
+PostgreSQL ya es la fuente de establecimiento, lotes e historiales.
 
 ## Qué NO viene en esta copia (y cómo se recupera)
 
@@ -237,7 +240,7 @@ src/
     types.ts         DTOs de respuesta
 
   clima/
-    api.ts             fachada del backend para consultar clima por lote
+    api.ts             solicita actualización y persistencia backend-owned
     interpretacion.ts  categoriza la lluvia en una palabra — NO calibrado agronómicamente
     types.ts
 ```
@@ -305,9 +308,9 @@ olvidados:
 2. **Historial de ocupación / rotación de pastoreo** — depende del punto 1.
    Más adelante se evalúa un modelo de ML para sugerir cuánto descansar cada
    lote (ver por qué el ML está pausado arriba).
-3. **Persistencia real / multi-dispositivo** — establecimiento, lotes e historial
-   satelital ya viven en PostgreSQL/Neon y se cargan por API autenticada. La
-   persistencia completa server-side de clima queda para una etapa posterior.
+3. **Persistencia real / multi-dispositivo** — establecimiento, lotes e
+   historiales satelitales y climáticos viven en PostgreSQL/Neon y se cargan
+   por API autenticada.
 4. **Alertas / análisis programado** — considerado irrelevante hasta que
    exista la persistencia y autenticación del backend; la automatización de
    chequeos periódicos queda para una etapa posterior.
@@ -334,8 +337,8 @@ olvidados:
 
 ## Estado implementado: onboarding y datos del mapa
 
-La persistencia histórica de Copernicus y Open-Meteo se realiza ahora en Neon
-después de respuestas exitosas, sin mover todavía esas consultas al backend.
+La persistencia histórica de Copernicus y Open-Meteo se realiza en Neon desde
+flujos backend-owned; el navegador envía intención/IDs, no observaciones.
 También existe historial de uso manual y descanso derivado por lote.
 
 El onboarding visual ahora reutiliza el mapa existente en dos pasos: creación
@@ -354,8 +357,8 @@ una semántica backend segura para esa operación.
 
 El backend actual usa `AUTH_JWT_SECRET` en `backend/.env`, JWT en cookie
 HttpOnly `rodeo_session`, y APIs privadas de establecimiento y lotes. El
-frontend ya está conectado a la autenticación; `localStorage` sólo continúa
-temporalmente para los datos del mapa.
+frontend ya está conectado a autenticación y PostgreSQL; `localStorage` no es
+fuente del establecimiento ni de los lotes.
 
 La guía de pruebas manuales está en [docs/INSOMNIA_TESTING.md](docs/INSOMNIA_TESTING.md).
 
@@ -384,7 +387,7 @@ limpian sus tablas entre tests. Exigen `TEST_DATABASE_URL`; nunca usan
 iguales. Configurá `TEST_DATABASE_URL` sólo con una base o branch de PostgreSQL
 descartable creado para testing, sin incluir la URL en el repositorio. Si no
 está configurada, la integración se omite de forma segura y los tests unitarios
-siguen ejecutándose.
+siguen ejecutándose. La suite actual declara 47 unitarios y 51 integraciones.
 
 ## Historial paginado y estado actual
 

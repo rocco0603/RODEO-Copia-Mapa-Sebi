@@ -200,9 +200,13 @@ lluvia_proximos_dias   DOUBLE PRECISION NULL
 categoria              TEXT NULL
 raw_metadata            JSONB NULL
 created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+origen                  TEXT NOT NULL CHECK (origen IN ('automatico', 'manual', 'legacy'))
 ```
 
-No se sobrescribe la consulta anterior. Si se consulta mañana de nuevo, se crea otro snapshot.
+La migración `003_clima_origen.sql` marca filas históricas cuyo origen no puede
+reconstruirse como `legacy`. Las nuevas filas son `automatico` o `manual`. Una
+manual siempre crea snapshot; una automática reciente se deduplica usando
+`created_at` del servidor y un lock transaccional sobre el lote.
 
 ## 6. `dias_clima`
 
@@ -276,6 +280,9 @@ created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
 La migración `002_lote_usos.sql` agrega esta tabla y su índice por lote/fecha.
+El backend rechaza `fecha` posterior a la fecha calendario actual con
+`FUTURE_USE_DATE`. Para no depender de la zona del host, “hoy” usa
+`America/Argentina/Buenos_Aires`.
 Los días de descanso se calculan en cada lectura usando la fecha más reciente;
 no se persiste un contador fijo.
 
@@ -283,7 +290,7 @@ La base guarda GeoJSON; la validación geométrica se hace en la aplicación/bac
 
 ## Fechas y estado consolidado
 
-Esta etapa no agrega migraciones. Las columnas existentes `observed_at`,
+Las columnas existentes `observed_at`,
 `dias_clima.fecha` y `usos_lote.fecha` son PostgreSQL `DATE`; `consulted_at`,
 `created_at` y `updated_at` son `TIMESTAMPTZ`. El backend configura el parser
 de `pg` para que `DATE` llegue como string `YYYY-MM-DD`, evitando desplazamientos

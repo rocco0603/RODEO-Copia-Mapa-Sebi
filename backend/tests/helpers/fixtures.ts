@@ -17,7 +17,7 @@ export function lote(min: number, max: number): PolygonFixture {
 }
 
 export const medicionOptica = {
-  fuente: 'sentinel-2',
+  fuente: 'sentinel-2' as const,
   observedAt: '2026-08-16',
   consultedAt: '2026-08-20T12:00:00.000Z',
   coberturaValida: 82,
@@ -30,7 +30,7 @@ export const medicionOptica = {
 };
 
 export const medicionRadar = {
-  fuente: 'sentinel-1',
+  fuente: 'sentinel-1' as const,
   observedAt: '2026-08-16',
   consultedAt: '2026-08-20T12:00:00.000Z',
   rvi: { media: 0.6, mediana: 0.62, min: 0.3, max: 0.9, desvio: 0.1 },

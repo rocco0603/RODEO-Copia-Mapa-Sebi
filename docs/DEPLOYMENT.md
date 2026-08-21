@@ -79,12 +79,30 @@ npm ci
 npm run typecheck
 npm run build
 npm run db:migrate
+npm run db:verify
 npm start
 ```
 
 La migración es un paso explícito previo al arranque; no se ejecuta
 automáticamente desde el servidor. PostgreSQL es portable: Neon es el servicio
 actual, pero cualquier PostgreSQL compatible puede usarse con `DATABASE_URL`.
+
+Antes de migrar una base principal, validar la misma revisión contra una base
+aislada. `NODE_ENV=test` hace que la configuración seleccione exclusivamente
+`TEST_DATABASE_URL`; no existe fallback a `DATABASE_URL`:
+
+```powershell
+$env:NODE_ENV = "test"
+npm run db:migrate
+npm run build
+npm run db:verify
+npm run test:integration
+Remove-Item Env:NODE_ENV
+```
+
+Sólo después se ejecutan `db:migrate` y `db:verify` con el entorno de la base
+principal. `db:verify` falla con exit code no cero si falta una tabla,
+columna/tipo, PK, FK, UNIQUE, CHECK o índice esencial.
 
 El proceso responde a `SIGTERM` y `SIGINT`: deja de aceptar conexiones, espera
 las requests en curso, cierra conexiones idle y finalmente cierra el pool de
@@ -119,6 +137,21 @@ Después de desplegar:
 7. probar Open-Meteo y, sólo si hay credenciales, Copernicus;
 8. revisar logs estructurados sin bodies, cookies ni secretos.
 
+El script `npm run test:smoke` amplía ese flujo con clima, un uso válido, el
+rechazo de una fecha futura y estado consolidado. Su cleanup elimina
+notificaciones, satélite, días/consultas de clima, usos, lotes, establecimiento
+y usuario. Sólo acepta usernames exactos `rodeo_smoke_<timestamp de 13 dígitos>`
+y confirma que el usuario no quede presente.
+
 No ejecutar smoke tests destructivos contra datos reales de usuarios. El
 proveedor, los dominios definitivos y el mecanismo de CI/CD de despliegue siguen
 siendo decisiones abiertas.
+
+## Advertencia SSL de `pg`
+
+Con ciertas URLs que usan `sslmode=require`, la versión actual de
+`pg-connection-string` avisa que hoy lo interpreta como `verify-full`, pero que
+una versión mayor futura adoptará la semántica libpq más débil de `require`.
+No es un fallo actual y no debe silenciarse reduciendo TLS. Cuando se roten las
+URLs, conviene hacer explícito `sslmode=verify-full` si el proveedor lo admite.
+Esta revisión no modifica `.env` ni reescribe la cadena de conexión.

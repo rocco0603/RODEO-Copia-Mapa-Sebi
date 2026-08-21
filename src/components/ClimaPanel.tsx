@@ -30,7 +30,8 @@ const ALTO_PLOT = ALTO - MARGEN.arriba - MARGEN.abajo;
 const COLOR_LLUVIA = "#2a78d6";
 
 function GraficoLluvia({ dias }: { dias: DiaClima[] }) {
-  const maxMm = Math.max(5, ...dias.map((d) => d.lluviaMm));
+  const lluviasDisponibles = dias.flatMap((dia) => dia.lluviaMm === null ? [] : [dia.lluviaMm]);
+  const maxMm = Math.max(5, ...lluviasDisponibles);
   const dominioMax = maxMm * 1.15;
   const anchoColumna = ANCHO_PLOT / dias.length;
   const anchoBarra = Math.min(18, anchoColumna * 0.6);
@@ -39,8 +40,8 @@ function GraficoLluvia({ dias }: { dias: DiaClima[] }) {
   const xCentro = (i: number): number => MARGEN.izquierda + anchoColumna * (i + 0.5);
 
   const indiceMax = dias.reduce(
-    (mejor, d, i) => (d.lluviaMm > dias[mejor].lluviaMm ? i : mejor),
-    0,
+    (mejor, dia, indice) => dia.lluviaMm !== null && (mejor === -1 || dia.lluviaMm > (dias[mejor].lluviaMm ?? -Infinity)) ? indice : mejor,
+    -1,
   );
   const indiceHoy = dias.findIndex((d) => d.esPronostico);
 
@@ -59,11 +60,11 @@ function GraficoLluvia({ dias }: { dias: DiaClima[] }) {
         strokeWidth={1}
       />
       {dias.map((d, i) => {
-        const h = alturaBarra(d.lluviaMm);
+        const h = d.lluviaMm === null ? 0 : alturaBarra(d.lluviaMm);
         const y = ALTO - MARGEN.abajo - h;
         return (
           <g key={d.fecha}>
-            <rect
+            {d.lluviaMm !== null && <rect
               x={xCentro(i) - anchoBarra / 2}
               y={y}
               width={anchoBarra}
@@ -72,15 +73,15 @@ function GraficoLluvia({ dias }: { dias: DiaClima[] }) {
               fill={COLOR_LLUVIA}
               opacity={d.esPronostico ? 0.45 : 1}
               tabIndex={0}
-              aria-label={`${etiquetaFecha(d.fecha)}${d.esPronostico ? " (pronóstico)" : ""}: ${d.lluviaMm.toFixed(1)} mm, ${d.tempMin.toFixed(0)}–${d.tempMax.toFixed(0)} °C`}
+              aria-label={`${etiquetaFecha(d.fecha)}${d.esPronostico ? " (pronóstico)" : ""}: ${d.lluviaMm.toFixed(1)} mm, ${d.tempMin?.toFixed(0) ?? "sin dato"}–${d.tempMax?.toFixed(0) ?? "sin dato"} °C`}
             >
               <title>
                 {etiquetaFecha(d.fecha)}
                 {d.esPronostico ? " (pronóstico)" : ""}: {d.lluviaMm.toFixed(1)} mm ·{" "}
-                {d.tempMin.toFixed(0)}–{d.tempMax.toFixed(0)} °C
+                {d.tempMin?.toFixed(0) ?? "sin dato"}–{d.tempMax?.toFixed(0) ?? "sin dato"} °C
               </title>
-            </rect>
-            {i === indiceMax && d.lluviaMm > 0 && (
+            </rect>}
+            {i === indiceMax && d.lluviaMm !== null && d.lluviaMm > 0 && (
               <text x={xCentro(i)} y={y - 4} textAnchor="middle" className="clima-valor">
                 {d.lluviaMm.toFixed(0)}
               </text>
@@ -157,7 +158,7 @@ export default function ClimaPanel({
               >
                 <div className="ranking-cabecera">
                   <span className="ranking-nombre">{nombreLote(lote)}</span>
-                  {esOk ? (
+                  {esOk && resultado.clima.lluviaUltimos7Dias !== null ? (
                     <span className="ranking-puntaje clima-badge">
                       {resultado.clima.lluviaUltimos7Dias.toFixed(0)} mm
                     </span>
@@ -170,12 +171,12 @@ export default function ClimaPanel({
                   <>
                     <div className="valores-inline">
                       <span>
-                        <b>7 días</b> {resultado.clima.lluviaUltimos7Dias.toFixed(0)} mm
+                        <b>7 días</b> {resultado.clima.lluviaUltimos7Dias?.toFixed(0) ?? "Sin datos"}{resultado.clima.lluviaUltimos7Dias === null ? "" : " mm"}
                       </span>
                       <span>
-                        <b>Próx.</b> {resultado.clima.lluviaProximosDias.toFixed(0)} mm
+                        <b>Próx.</b> {resultado.clima.lluviaProximosDias?.toFixed(0) ?? "Sin datos"}{resultado.clima.lluviaProximosDias === null ? "" : " mm"}
                       </span>
-                      <span className="clima-etiqueta">{ETIQUETA_LLUVIA[resultado.categoria]}</span>
+                      <span className="clima-etiqueta">{resultado.categoria ? ETIQUETA_LLUVIA[resultado.categoria] : "Sin categoría"}</span>
                     </div>
                     {seleccionado && <DetalleClima clima={resultado.clima} />}
                   </>

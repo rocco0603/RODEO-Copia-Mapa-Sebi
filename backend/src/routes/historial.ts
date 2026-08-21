@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import { requiereAutenticacion } from '../auth/middleware.js';
 import {
-  crearConsultaClima,
-  crearMedicionSatelital,
   crearUsoLote,
   obtenerConsultasClima,
   obtenerEstadoLote,
@@ -15,9 +13,7 @@ import { asyncHandler } from '../http/async-handler.js';
 export const historialRouter = Router();
 historialRouter.use(requiereAutenticacion);
 
-historialRouter.post('/:id/mediciones-satelitales', asyncHandler(crearMedicionSatelital));
 historialRouter.get('/:id/mediciones-satelitales', asyncHandler(obtenerMedicionesSatelitales));
-historialRouter.post('/:id/clima', asyncHandler(crearConsultaClima));
 historialRouter.get('/:id/clima', asyncHandler(obtenerConsultasClima));
 historialRouter.post('/:id/usos', asyncHandler(crearUsoLote));
 historialRouter.get('/:id/usos', asyncHandler(obtenerUsosLote));

@@ -27,7 +27,8 @@ completa `/lotes/:id` ya están implementados. Mantener el mapa y no reintroduci
 
 Copernicus y Open-Meteo se consumen mediante Express; Vite sÃ³lo proxifica sus
 endpoints. Open-Meteo no requiere API key y el frontend conserva fachadas
-compatibles para el mapa y la ficha.
+compatibles para el mapa y la ficha. Ambos flujos persisten desde backend; el
+navegador no envía observaciones como autoridad.
 
 ## Notificaciones
 

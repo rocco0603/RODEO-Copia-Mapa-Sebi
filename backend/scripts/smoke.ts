@@ -1,4 +1,6 @@
 import { pool } from '../src/db/pool.js';
+import { hoyCalendario } from '../src/date.js';
+import { eliminarUsuarioSmoke } from './smoke-cleanup.js';
 
 const baseUrl = `http://localhost:${process.env.PORT ?? 3001}`;
 const username = `rodeo_smoke_${Date.now()}`;
@@ -32,6 +34,12 @@ function expect(status: number, actual: number, label: string): void {
   console.log(`OK ${label} (${actual})`);
 }
 
+function fechaManana(): string {
+  const manana = new Date();
+  manana.setDate(manana.getDate() + 1);
+  return hoyCalendario(manana);
+}
+
 try {
   expect(200, (await request('/api/health')).status, 'health');
   cookie = '';
@@ -56,27 +64,45 @@ try {
   expect(200, (await request(`/api/lotes/${firstLot.id}`, { method: 'PATCH', body: JSON.stringify({ activo: false }) })).status, 'editar lote');
   expect(204, (await request(`/api/lotes/${firstLot.id}`, { method: 'DELETE' })).status, 'soft delete');
   expect(201, (await request('/api/lotes', { method: 'POST', body: JSON.stringify({ polygon: loteValido(3, 4) }) })).status, 'nuevo lote sin reutilizar número');
+  const lotes = await request('/api/lotes');
+  const loteActivo = (lotes.body as { lotes: Array<{ id: string }> }).lotes[0];
+  const clima = await request(`/api/lotes/${loteActivo.id}/clima/actualizar`, {
+    method: 'POST',
+    body: JSON.stringify({ origen: 'manual' }),
+  });
+  expect(200, clima.status, 'actualizar clima y persistir');
+  if ((clima.body as { resultado: { estado: string } }).resultado.estado !== 'ok') throw new Error('Open-Meteo no devolvió datos válidos durante el smoke.');
+  expect(201, (await request(`/api/lotes/${loteActivo.id}/usos`, { method: 'POST', body: JSON.stringify({ fecha: hoyCalendario() }) })).status, 'registrar uso válido');
+  const futuro = await request(`/api/lotes/${loteActivo.id}/usos`, { method: 'POST', body: JSON.stringify({ fecha: fechaManana() }) });
+  expect(400, futuro.status, 'rechazar uso futuro');
+  if ((futuro.body as { error: { code: string } }).error.code !== 'FUTURE_USE_DATE') throw new Error('El rechazo de uso futuro devolvió un código inesperado.');
+  const conteos = await pool.query<{ consultas: number; dias: number; usos: number }>(
+    `SELECT
+       (SELECT COUNT(*)::int FROM consultas_clima WHERE lote_id = $1) AS consultas,
+       (SELECT COUNT(*)::int FROM dias_clima d JOIN consultas_clima c ON c.id = d.consulta_clima_id WHERE c.lote_id = $1) AS dias,
+       (SELECT COUNT(*)::int FROM usos_lote WHERE lote_id = $1) AS usos`,
+    [loteActivo.id],
+  );
+  if (conteos.rows[0].consultas !== 1 || conteos.rows[0].dias < 1 || conteos.rows[0].usos !== 1) throw new Error('Los conteos persistidos del smoke no coinciden con lo esperado.');
+  if (process.env.COPERNICUS_CLIENT_ID && process.env.COPERNICUS_CLIENT_SECRET) {
+    const satelite = await request(`/api/lotes/${loteActivo.id}/satelite/actualizar`, { method: 'POST' });
+    expect(200, satelite.status, 'actualizar satélite');
+    const estado = (satelite.body as { resultado: { estado: string } }).resultado.estado;
+    if (estado === 'ok' || estado === 'radar') {
+      const mediciones = await pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1', [loteActivo.id]);
+      if (mediciones.rows[0].count < 1) throw new Error('La actualización satelital no persistió mediciones.');
+    } else {
+      console.log(`Copernicus respondió con estado ${estado}; el smoke de persistencia satelital quedó sin datos válidos.`);
+    }
+  }
+  expect(200, (await request(`/api/lotes/${loteActivo.id}/estado`)).status, 'estado consolidado');
   expect(400, (await request('/api/establecimiento', { method: 'PATCH', body: JSON.stringify({ polygon: loteValido(0, 2) }) })).status, 'establecimiento deja lote afuera');
   const me = await request('/api/auth/me');
   expect(200, me.status, 'onboarding no se revierte');
   console.log('Smoke test completo.');
 } finally {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('DELETE FROM notificaciones WHERE user_id IN (SELECT id FROM usuarios WHERE username = $1)', [username]);
-    await client.query('DELETE FROM mediciones_satelitales WHERE lote_id IN (SELECT l.id FROM lotes l JOIN establecimientos e ON e.id = l.establecimiento_id JOIN usuarios u ON u.id = e.user_id WHERE u.username = $1)', [username]);
-    await client.query('DELETE FROM dias_clima WHERE consulta_clima_id IN (SELECT c.id FROM consultas_clima c JOIN lotes l ON l.id = c.lote_id JOIN establecimientos e ON e.id = l.establecimiento_id JOIN usuarios u ON u.id = e.user_id WHERE u.username = $1)', [username]);
-    await client.query('DELETE FROM consultas_clima WHERE lote_id IN (SELECT l.id FROM lotes l JOIN establecimientos e ON e.id = l.establecimiento_id JOIN usuarios u ON u.id = e.user_id WHERE u.username = $1)', [username]);
-    await client.query('DELETE FROM lotes WHERE establecimiento_id IN (SELECT e.id FROM establecimientos e JOIN usuarios u ON u.id = e.user_id WHERE u.username = $1)', [username]);
-    await client.query('DELETE FROM establecimientos WHERE user_id IN (SELECT id FROM usuarios WHERE username = $1)', [username]);
-    await client.query('DELETE FROM usuarios WHERE username = $1', [username]);
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  await eliminarUsuarioSmoke(pool, username);
+  const restante = await pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM usuarios WHERE username = $1', [username]);
+  if (restante.rows[0].count !== 0) throw new Error('El cleanup no eliminó completamente el usuario smoke.');
   await pool.end();
 }

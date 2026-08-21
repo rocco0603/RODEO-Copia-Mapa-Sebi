@@ -264,12 +264,15 @@ El bloque histórico siguiente conserva el estado de una etapa anterior. Para
 el estado satelital vigente manda la sección “Centralización satelital
 completa (implementada)” inmediatamente anterior.
 
-## Estado real de la etapa de onboarding y persistencia
+## Estado histórico de la etapa de onboarding y persistencia
 
 La persistencia histórica satelital, climática y de uso manual del lote está
 implementada sin mover todavía Copernicus ni Open-Meteo al backend. La
 migración adicional es `002_lote_usos.sql`; `001_initial_schema.sql` no fue
 modificada.
+
+Ese fue el cierre de aquella etapa; la sección “Actualización climática
+backend-owned” describe el estado vigente posterior y agrega la migración 003.
 
 Completado el onboarding visual sobre el mapa existente y la conexión de
 establecimiento/lotes a PostgreSQL/Neon. El frontend carga los datos antes de
@@ -289,14 +292,16 @@ Cada fase debe:
 - evitar secretos en Git;
 - incluir una prueba manual mínima o test automatizado cuando corresponda.
 
-## MigraciÃ³n del gateway Open-Meteo al backend
+## Actualización climática backend-owned
 
-Implementada sin migraciÃ³n de base ni cambios de historial. El endpoint
-autenticado `POST /api/clima/consultar` recibe IDs, valida ownership y usa los
-polÃ­gonos almacenados para calcular centroides. Mantiene una sola llamada
-multi-coordenada, `past_days=7`, `forecast_days=5`, `timezone=auto`, las tres
-variables diarias y los umbrales existentes. El frontend conserva
-`consultarClimaLotes(lotes)` como fachada, pero ya no parsea la respuesta raw.
+Implementada con la migración `003_clima_origen.sql`. Los endpoints
+`POST /api/lotes/:id/clima/actualizar` y
+`POST /api/lotes/clima/actualizar` reciben IDs/origen, validan ownership y usan
+los polígonos almacenados para calcular centroides. Mantienen una llamada
+multi-coordenada, `past_days=7`, `forecast_days=5`, `timezone=auto`, interpretan
+y persisten sólo resultados válidos. El frontend no reenvía valores
+meteorológicos. Las automáticas se deduplican atómicamente por lote y las
+manuales conservan snapshots independientes.
 
 ## Etapa de historial paginado y estado actual
 

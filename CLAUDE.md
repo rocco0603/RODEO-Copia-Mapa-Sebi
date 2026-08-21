@@ -38,8 +38,8 @@ El radar Sentinel-1 nunca se mezcla con la óptica Sentinel-2 en el mismo puntaj
 - mapa, Copernicus y Open-Meteo existentes.
 
 La persistencia histórica de satélite/clima y sus APIs backend están
-implementadas. La actualización satelital completa ya es responsabilidad de
-Express; la persistencia completa server-side de clima sigue separada.
+implementadas. Las actualizaciones satelital y climática completas son
+responsabilidad de Express; el navegador sólo envía IDs e intención.
 
 ## Qué sigue pausado
 
@@ -87,9 +87,10 @@ fuera del mapa y no reintroducir `localStorage` como fuente de datos.
 
 ## Clima externo
 
-Open-Meteo se consume mediante `POST /api/clima/consultar`. El frontend envÃ­a
-IDs de lotes, no geometrÃ­as; el backend valida ownership, calcula centroides
-y mantiene la consulta multi-lote.
+Open-Meteo se consume mediante `POST /api/lotes/:id/clima/actualizar` y
+`POST /api/lotes/clima/actualizar`. El frontend envía IDs y origen, no
+geometrías ni valores meteorológicos; el backend valida ownership, calcula
+centroides, consulta y persiste en una sola operación.
 
 ## Notificaciones base
 

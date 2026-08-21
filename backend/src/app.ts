@@ -29,10 +29,10 @@ app.use(express.json({ limit: '1mb' }));
 
 app.use('/api/health', healthRouter);
 app.use('/api/copernicus', copernicusRouter);
-app.use('/api/clima', climaRouter);
 app.use('/api/notificaciones', notificacionesRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/establecimiento', establecimientoRouter);
+app.use('/api/lotes', climaRouter);
 app.use('/api/lotes', sateliteRouter);
 app.use('/api/lotes', lotesRouter);
 app.use('/api/lotes', historialRouter);
@@ -47,4 +47,3 @@ app.use((error: unknown, req: express.Request, res: express.Response, next: expr
   if (!(error instanceof ApiError) || response.status >= 500) registrarError(req, response.status, error);
   res.status(response.status).json(response.body);
 });
-

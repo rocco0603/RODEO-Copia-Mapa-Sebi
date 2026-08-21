@@ -62,7 +62,7 @@ export async function obtenerEstadosDeLotes(loteIds: string[], referencia = new 
     return {
       lote: { id: lote.id, numero: lote.numero, apodo: lote.apodo, activo: lote.activo },
       satelite: { optico: opticoPorLote.has(loteId) ? estadoOptico(opticoPorLote.get(loteId), referencia) : null, radar: radarPorLote.has(loteId) ? estadoRadar(radarPorLote.get(loteId), referencia) : null },
-      clima: consulta ? { consultedAt: consulta.consulted_at, horasDesdeConsulta: horasDesdeTimestamp(consulta.consulted_at, referencia.getTime()), lluviaUltimos7Dias: consulta.lluvia_ultimos_7_dias, lluviaProximosDias: consulta.lluvia_proximos_dias, categoria: consulta.categoria, hoy: dia ? { fecha: dia.fecha, lluviaMm: dia.lluvia_mm, tempMin: dia.temp_min, tempMax: dia.temp_max, esPronostico: dia.es_pronostico } : null } : null,
+      clima: consulta ? { consultedAt: consulta.consulted_at, origen: consulta.origen, horasDesdeConsulta: horasDesdeTimestamp(consulta.consulted_at, referencia.getTime()), lluviaUltimos7Dias: consulta.lluvia_ultimos_7_dias, lluviaProximosDias: consulta.lluvia_proximos_dias, categoria: consulta.categoria, hoy: dia ? { fecha: dia.fecha, lluviaMm: dia.lluvia_mm, tempMin: dia.temp_min, tempMax: dia.temp_max, esPronostico: dia.es_pronostico } : null } : null,
       uso: { ultimoUso: uso ? { fecha: uso.fecha, origen: uso.origen } : null, diasDescanso: uso ? Math.max(0, diasEntreFechas(uso.fecha, hoy)) : null },
     };
   });

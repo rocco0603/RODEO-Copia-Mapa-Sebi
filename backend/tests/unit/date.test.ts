@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp } from '../../src/date.js';
+import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp, hoyCalendario } from '../../src/date.js';
 
 describe('fechas calendario y frescura', () => {
   test('calcula días sin convertir DATE en instante local', () => {
@@ -11,5 +11,10 @@ describe('fechas calendario y frescura', () => {
 
   test('calcula horas para timestamps reales', () => {
     expect(horasDesdeTimestamp('2026-08-20T11:36:00.000Z', Date.parse('2026-08-20T12:00:00.000Z'))).toBe(0.4);
+  });
+
+  test('usa el calendario argentino aunque el host trabaje en UTC', () => {
+    expect(hoyCalendario(new Date('2026-08-21T01:30:00.000Z'))).toBe('2026-08-20');
+    expect(hoyCalendario(new Date('2026-08-21T03:00:00.000Z'))).toBe('2026-08-21');
   });
 });

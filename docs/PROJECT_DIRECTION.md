@@ -60,13 +60,6 @@ de establecimiento y lotes, validaciones geométricas, soft delete, numeración
 histórica y finalización irreversible del onboarding. El frontend ya consume
 la autenticación real y conserva el mapa mediante `App`/`RodeoApp`.
 
-La situación es deliberadamente intermedia: el backend conoce al usuario y su
-estado de onboarding, pero el mapa todavía usa `localStorage` para mostrar y
-guardar establecimiento y lotes. La próxima etapa conecta esas operaciones a
-`GET/POST/PATCH /api/establecimiento` y `GET/POST/PATCH/DELETE /api/lotes`, para
-que Neon sea la fuente multi-dispositivo. El onboarding visual completo queda
-en esa etapa.
-
 Copernicus no es requisito para arrancar Vite. Las credenciales opcionales son
 `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`, sólo del lado Node/Vite y
 sin prefijo `VITE_`; Open-Meteo no requiere credenciales.
@@ -84,10 +77,11 @@ Backend Node.js
     |
     +--> Copernicus
     |
-    +--> Open-Meteo (puede migrarse gradualmente al backend)
+    +--> Open-Meteo (consulta y persistencia backend-owned)
 ```
 
-En la primera etapa no hace falta mover todas las integraciones externas de golpe si eso pone en riesgo el frontend. La migración debe ser progresiva.
+Copernicus y Open-Meteo ya se consumen desde Express. El frontend solicita
+actualizaciones por IDs y nunca actúa como autoridad de observaciones externas.
 
 ## Decisiones cerradas
 

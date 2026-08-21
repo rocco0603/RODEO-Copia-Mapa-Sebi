@@ -10,14 +10,13 @@ import { isFullyContained, polygonsOverlap } from "../geo";
 import { actualizarSateliteLotes, credencialesListas } from "../copernicus/api";
 import { COLOR_CATEGORIA, COLOR_RADAR, COLOR_SIN_DATOS, ETIQUETA_CATEGORIA } from "../copernicus/presentacion";
 import type { ResultadoLote } from "../copernicus/types";
-import { consultarClimaLotes } from "../clima/api";
+import { actualizarClimaLotes } from "../clima/api";
 import type { ResultadoClimaLote } from "../clima/types";
 import ClimaPanel from "./ClimaPanel";
 import type { Establecimiento, Lote, PolygonFeature } from "../types";
 import { getCurrentUser, type UsuarioAutenticado } from "../api/auth";
 import { ApiError } from "../api/client";
 import { actualizarEstablecimiento, actualizarLote, crearEstablecimiento, crearLote, eliminarLote, obtenerEstablecimiento, obtenerLotes } from "../api/rodeo";
-import { guardarConsultaClima, type OrigenConsultaClima } from "../api/historial";
 
 type Modal =
   | { type: "nombre-establecimiento"; polygon: PolygonFeature }
@@ -92,11 +91,10 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
     if (!establecimiento) { setResultadosClima({}); return; }
     let vigente = true;
     setClimaConsultando(true);
-    consultarClimaLotes(lotes.filter((lote) => lote.activo)).then((resultado) => {
+    actualizarClimaLotes(lotes.filter((lote) => lote.activo).map((lote) => lote.id), "automatico").then((resultado) => {
       if (vigente) {
         setResultadosClima(resultado);
         setClimaConsultando(false);
-        void persistirResultadosClima(resultado, "automatico");
       }
     });
     return () => { vigente = false; };
@@ -108,14 +106,6 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
     () => lotes.filter((lote) => lote.activo || showInactivos),
     [lotes, showInactivos],
   );
-
-  async function persistirResultadosClima(resultadosClimaActuales: Record<string, ResultadoClimaLote>, origen: OrigenConsultaClima) {
-    const operaciones = Object.values(resultadosClimaActuales)
-      .filter((resultado): resultado is Extract<ResultadoClimaLote, { estado: "ok" }> => resultado.estado === "ok")
-      .map((resultado) => guardarConsultaClima(resultado.loteId, resultado, origen));
-    const resultadosGuardado = await Promise.allSettled(operaciones);
-    if (resultadosGuardado.some((resultado) => resultado.status === "rejected")) setNotice({ kind: "warning", text: "El clima se obtuvo, pero no se pudo guardar en el historial." });
-  }
 
   function startEstablecimiento() { if (guardando) return; setNotice(null); setDrawMode("establecimiento"); mapRef.current?.startDrawEstablecimiento(); }
   function startLote() { if (guardando) return; setNotice(null); setDrawMode("lote"); mapRef.current?.startDrawLote(); }
@@ -219,7 +209,7 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
         : actualizarLote(modal.loteId, { apodo: value }).then((actualizado) => setLotes((items) => items.map((item) => item.id === actualizado.id ? actualizado : item)));
     action.catch((error: unknown) => setNotice({ kind: "error", text: mensajeApi(error) })).finally(() => { setGuardando(false); setModal(null); });
   }
-  async function actualizarClima() { if (climaConsultando || !lotesActivos.length) return; setClimaConsultando(true); const resultado = await consultarClimaLotes(lotesActivos); setResultadosClima(resultado); setClimaConsultando(false); void persistirResultadosClima(resultado, "manual"); }
+  async function actualizarClima() { if (climaConsultando || !lotesActivos.length) return; setClimaConsultando(true); const resultado = await actualizarClimaLotes(lotesActivos.map((lote) => lote.id), "manual"); setResultadosClima(resultado); setClimaConsultando(false); }
   async function analizar() {
     if (analizando || !lotesActivos.length) return; setAnalizando(true); setErrorAnalisis(null);
     try { const respuestas = await actualizarSateliteLotes(lotesActivos.map((lote) => lote.id)); const porLote: Record<string, ResultadoLote> = {}; respuestas.forEach((respuesta) => { porLote[respuesta.loteId] = respuesta; }); setResultados(porLote); setUltimoAnalisis(Date.now()); const errores = respuestas.filter((respuesta) => respuesta.estado === "error"); if (errores.length) setErrorAnalisis(errores.length === respuestas.length ? errores[0].mensaje : `${errores.length} de ${respuestas.length} lotes no se pudieron consultar.`); }

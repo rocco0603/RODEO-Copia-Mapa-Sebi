@@ -6,19 +6,19 @@
 
 Este recorrido no describe un backend ideal ni una aplicación genérica. Sigue imports, rutas, consultas SQL, servicios, clientes frontend, migraciones, pruebas y CI de este RODEO.
 
-Para prepararlo se revisaron 67 archivos de backend dentro del alcance pedido:
+Para prepararlo se revisaron 72 archivos de backend dentro del alcance pedido:
 
-- 43 archivos en `backend/src/`;
-- 2 migraciones;
-- 5 scripts;
-- 12 archivos de tests;
+- 45 archivos en `backend/src/`;
+- 3 migraciones;
+- 6 scripts;
+- 14 archivos de tests;
 - `backend/package.json`, los dos `tsconfig`, `vitest.config.ts` y `backend/.env.example`.
 
 También se revisaron el frontend que llama a la API, `vite.config.ts`, toda la documentación y `.github/workflows/ci.yml`. El inventario real resultante es:
 
-- 30 endpoints HTTP;
+- 29 endpoints HTTP;
 - 8 tablas de dominio;
-- 42 tests unitarios y 49 tests de integración declarados, 91 en total;
+- 47 tests unitarios y 51 tests de integración declarados, 98 en total;
 - 5 flujos principales: autenticación, lotes, satélite, clima y ficha/historial.
 
 No se leyó ni se documenta `node_modules`, y no se usaron secretos de archivos `.env` reales.
@@ -159,20 +159,19 @@ Importante: la Statistical API puede devolver muchos intervalos, pero el código
 
 ### 2.4 Actualizar clima
 
-El flujo actual tiene dos requests backend deliberadamente separados: uno consulta al proveedor y otro persiste el snapshot.
+Consulta e historial forman una sola operación backend-owned.
 
-1. En la ficha, `LotePage.actualizarClima()` llama `consultarClimaLotes([lote])`. En el mapa, `RodeoApp.actualizarClima()` envía todos los lotes activos.
-2. `src/clima/api.ts` envía sólo `{ loteIds }` a `POST /api/clima/consultar`.
-3. `climaRouter` autentica y delega en `controllers/clima.ts`; `consultarClima()` valida entre 1 y 100 UUID, elimina repetidos y consulta ownership + polígonos en PostgreSQL.
+1. En la ficha, `LotePage.actualizarClima()` llama el endpoint individual con origen `manual`. En el mapa, `RodeoApp` envía los IDs activos al batch con origen `automatico` en la carga y `manual` al pulsar Actualizar.
+2. `src/clima/api.ts` envía sólo ID/IDs y origen a `POST /api/lotes/:id/clima/actualizar` o `POST /api/lotes/clima/actualizar`.
+3. `climaRouter` autentica y delega en `controllers/clima.ts`; el controller valida UUID/origen, elimina IDs repetidos y comprueba ownership + soft delete de todos antes del upstream.
 4. `OpenMeteoClient.consultar()` calcula con Turf el centroide de cada lote. Cambia `[lng, lat]` de GeoJSON a `[lat, lng]` para la API.
 5. Construye una sola URL multi-coordinate: latitudes y longitudes separadas por comas, redondeadas a 4 decimales.
 6. Pide `precipitation_sum`, `temperature_2m_max` y `temperature_2m_min`, con `past_days=7`, `forecast_days=5` y `timezone=auto`.
-7. Tiene timeout de 20 segundos. Convierte la respuesta en un `ResultadoClimaLote` por ID y calcula sumas/categoría.
-8. `/api/clima/consultar` responde `{ resultados }`; todavía no inserta filas por sí mismo.
-9. Si el resultado es `ok`, el frontend llama `guardarConsultaClima(loteId, resultado, origen)` y envía `POST /api/lotes/:id/clima`.
-10. `historialRouter` vuelve a autenticar y delega en `controllers/historial.ts`, donde `crearConsultaClima()` comprueba ownership. Para origen `automatico`, evita otra inserción si existe una consulta cuyo `created_at` servidor sea de la última hora. Una consulta `manual` siempre puede crear snapshot.
-11. En una transacción inserta una fila en `consultas_clima` y luego una fila por fecha en `dias_clima`. Error en cualquier día implica `ROLLBACK` de todo el snapshot.
-12. La ficha vuelve a ejecutar `cargarDatos()`. En `RodeoApp`, la persistencia se hace con `Promise.allSettled`; si una falla, el clima puede verse en memoria y se muestra un aviso de que no se guardó.
+7. Tiene timeout de 20 segundos. Convierte la respuesta en un `ResultadoClimaLote` por ID; faltantes quedan `null` y una respuesta completamente vacía se vuelve error.
+8. Terminada la llamada HTTP externa, el controller persiste cada lote `ok` en una transacción independiente; no mantiene conexiones bloqueadas durante Open-Meteo.
+9. `persistirConsultaClima()` bloquea la fila del lote. Si el origen es `automatico`, busca sólo automáticas con `created_at` servidor de la última hora; así dos requests concurrentes no insertan duplicados. Una manual siempre crea snapshot.
+10. La misma transacción inserta `consultas_clima` y todos sus `dias_clima`. Un error hace `ROLLBACK` sólo de ese lote; otros resultados batch quedan aislados.
+11. El endpoint responde con el resultado y metadata `persistencia`; la ficha recarga estado/historial. El frontend nunca reenvía lluvia, temperaturas, categoría, días ni `consultedAt`.
 
 La carga automática de clima de `RodeoApp` ocurre cuando cambia `establecimiento?.id`, no mediante un cron del backend. No hay scheduler server-side.
 
@@ -397,9 +396,9 @@ Todas las FKs usan `ON DELETE RESTRICT`; los flujos normales no borran físicame
 ### `consultas_clima`
 
 - PK `id`; FK `lote_id`.
-- Un snapshot: momento consultado, acumulados, categoría y metadata.
+- Un snapshot: momento consultado, acumulados, categoría, metadata y origen validado (`automatico`, `manual`, `legacy`).
 - Cada actualización guardada crea una fila, salvo dedupe automático reciente.
-- La usan POST/GET de clima y estado.
+- La usan actualización/GET de clima y estado.
 
 ### `dias_clima`
 
@@ -437,10 +436,11 @@ Una migración versiona la estructura de la base por separado del código que la
 
 - `001_initial_schema.sql`: habilita `pgcrypto`, crea las primeras siete tablas, constraints e índices.
 - `002_lote_usos.sql`: agrega `usos_lote` y su índice.
+- `003_clima_origen.sql`: agrega/backfillea `consultas_clima.origen`, su CHECK y el índice parcial para automáticas recientes.
 - `backend/scripts/migrate.ts`: ordena los `.sql`, abre una transacción y ejecuta todos.
 - `npm run db:migrate`: comando explícito; el servidor no migra al arrancar.
 
-Los scripts usan `CREATE ... IF NOT EXISTS`, pero no existe una tabla ledger de migraciones aplicadas. Por eso cada ejecución vuelve a recorrer ambos archivos. Código y estructura son diferentes: agregar una query en TypeScript no crea una columna; agregar SQL no enseña automáticamente al frontend a usarla.
+Los scripts usan operaciones idempotentes donde corresponde, pero no existe una tabla ledger de migraciones aplicadas. Por eso cada ejecución vuelve a recorrer los tres archivos. Código y estructura son diferentes: agregar una query en TypeScript no crea una columna; agregar SQL no enseña automáticamente al frontend a usarla.
 
 ## 11. Geometría de establecimiento y lotes
 
@@ -614,9 +614,16 @@ Categorías implementadas:
 - semana `< 5` y próximos `< 5`: `seco`;
 - resto: `normal`.
 
-Estas categorías tampoco son calibración agronómica definitiva. Además, el código actual convierte un valor diario faltante/no finito en `0`; eso es comportamiento real que conviene revisar si el producto necesita distinguir “cero” de “dato ausente”.
+Estas categorías tampoco son calibración agronómica definitiva. Un valor diario
+faltante/no finito permanece `null`. Si falta lluvia dentro de una ventana, su
+suma y categoría quedan `null`; si faltan todos los valores meteorológicos, el
+resultado es error y no se persiste.
 
-Cada persistencia exitosa crea un snapshot en `consultas_clima` y sus fechas en `dias_clima`. Cuando el request declara origen automático, se omite si existe **cualquier** snapshot reciente del lote por `created_at >= NOW() - INTERVAL '1 hour'`; la tabla no guarda el origen. `consulted_at` conserva cuándo se consultó el proveedor, pero el control de spam usa reloj servidor.
+Cada persistencia exitosa crea un snapshot en `consultas_clima` y sus fechas en
+`dias_clima`. `origen` queda persistido. Para `automatico`, un lock sobre la
+fila del lote serializa check+insert y sólo considera automáticas con
+`created_at >= NOW() - INTERVAL '1 hour'`. `consulted_at` usa la referencia
+temporal fijada por el backend.
 
 ## 15. Estado actual derivado
 
@@ -681,7 +688,9 @@ El filtro de clima interpreta `desde/hasta` como límites UTC de `consulted_at`.
 
 `GET /api/lotes/:id/historial` es un contrato de compatibilidad: devuelve hasta 50 de cada colección. Para satélite y usos pide 51 para calcular `hayMas`; clima usa su paginador. La ficha vigente no lo llama.
 
-El endpoint autenticado `POST /api/lotes/:id/mediciones-satelitales` todavía permite persistencia/upsert de una medición enviada por un cliente autorizado. El flujo frontend vigente de Copernicus no lo usa: utiliza el endpoint centralizado de actualización.
+Los endpoints históricos de satélite y clima son sólo de lectura. Los antiguos
+POST que aceptaban observaciones del cliente fueron retirados; las escrituras
+provienen exclusivamente de los flujos backend-owned.
 
 ## 17. Descanso
 
@@ -693,7 +702,8 @@ diasDescanso = max(0, fechaCalendarioDeHoy - fechaDelUltimoUso)
 
 `diasEntreFechas()` trabaja con medianoches UTC construidas desde partes `YYYY-MM-DD`, evitando diferencias de horario de verano o zona. Sin usos devuelve `ultimoUso: null` y `diasDescanso: null`.
 
-La UI impide elegir una fecha futura con `max={hoy()}`, pero el endpoint backend sólo valida que sea una fecha calendario válida; hoy no rechaza explícitamente fechas futuras.
+Además del `max` de UI, el backend compara contra `hoyCalendario()` y rechaza
+una fecha futura con `400 FUTURE_USE_DATE`.
 
 ## 18. Notificaciones
 
@@ -748,7 +758,9 @@ Browser http://localhost:5173
             └─ http://localhost:3001/api/lotes
 ```
 
-Hay proxies explícitos para auth, establecimiento, lotes, Copernicus, clima, notificaciones y health. El browser ve una URL relativa y evita CORS en esta topología local.
+Hay proxies explícitos para auth, establecimiento, lotes, Copernicus,
+notificaciones y health. Clima usa el prefijo `/api/lotes`. El browser ve una
+URL relativa y evita CORS en esta topología local.
 
 En un build donde API y frontend tienen dominios distintos, `VITE_API_BASE_URL=https://api...` queda incorporada al bundle. Es una URL pública, no un secreto.
 
@@ -838,9 +850,9 @@ No hay protección CSRF específica basada en token. `SameSite` ayuda según top
 
 ### Unitarios frente a integración
 
-Un test unitario aísla una función/clase y controla sus dependencias. Los 42 actuales prueban configuración, fechas, geometría, query params, request ID, hardening, cliente Copernicus, analizador satelital y Open-Meteo.
+Un test unitario aísla una función/clase y controla sus dependencias. Los 47 actuales prueban configuración, fechas/zona calendario, geometría, query params, request ID, hardening, Copernicus, analizador satelital, Open-Meteo, schema verify y cleanup smoke.
 
-Un test de integración atraviesa Express, middleware y PostgreSQL real. Los 49 actuales usan Supertest con `app`, sin abrir puerto, y agentes que conservan cookies. Verifican health/auth, gateways sustituidos, ownership, geometría, transacciones, upserts, clima, estado, historial y notificaciones.
+Un test de integración atraviesa Express, middleware y PostgreSQL real. Los 51 actuales usan Supertest con `app`, sin abrir puerto, y agentes que conservan cookies. Verifican health/auth, integraciones sustituidas, ownership, geometría, transacciones, upserts, clima, estado, historial y notificaciones.
 
 Vitest es el runner/aserciones. Supertest simula el cliente HTTP contra la app Express.
 
@@ -858,7 +870,7 @@ Las integraciones sustituyen transporte/gateway de Copernicus y Open-Meteo media
 
 - `tests/helpers/db.ts`: guardas de URL, migración y limpieza.
 - `tests/helpers/fixtures.ts`: usuarios, polígonos y payloads reutilizables.
-- `tests/integration/api.test.ts`: los 49 casos HTTP+DB.
+- `tests/integration/api.test.ts`: los 51 casos HTTP+DB.
 - `tests/unit/analizador-satelital.test.ts`: bodies, parsing, fallback, scoring, concurrencia.
 - `tests/unit/config.test.ts`: validación de entorno.
 - `tests/unit/copernicus.test.ts`: credenciales, OAuth, cache y retry 401.
@@ -868,6 +880,8 @@ Las integraciones sustituyen transporte/gateway de Copernicus y Open-Meteo media
 - `tests/unit/open-meteo.test.ts`: request multi-coordinate e interpretación.
 - `tests/unit/query.test.ts`: paginación, booleanos y rangos.
 - `tests/unit/request-id.test.ts`: conservación/reemplazo de identificadores.
+- `tests/unit/schema-verifier.test.ts`: detecta estructuras DB esenciales ausentes.
+- `tests/unit/smoke-cleanup.test.ts`: exige el username smoke estricto.
 
 `vitest.config.ts` usa entorno Node, limpia mocks y da 30 segundos porque las integraciones pueden hacer múltiples roundtrips contra Neon remoto.
 
@@ -880,14 +894,18 @@ Las integraciones sustituyen transporte/gateway de Copernicus y Open-Meteo media
 | `npm run build` | compila `src` y scripts a `dist` |
 | `npm start` | ejecuta `dist/src/server.js` |
 | `npm run db:migrate` / `scripts/migrate.ts` | aplica los SQL en transacción |
-| `npm run db:verify` / `scripts/verify-schema.ts` | comprueba las 8 tablas esperadas |
-| `npm run test:smoke` / `scripts/smoke.ts` | recorre API real contra un servidor levantado |
+| `npm run db:verify` / `scripts/verify-schema.ts` | comprueba tablas, columnas/tipos, PK, FK, UNIQUE, CHECK e índices |
+| `npm run test:smoke` / `scripts/smoke.ts` | recorre API, clima, uso y estado contra un servidor levantado |
 | `scripts/list-smoke-users.ts` | lista usuarios de smoke identificables |
 | `scripts/cleanup-user.ts` | limpieza administrativa acotada por `SMOKE_USERNAME` |
+| `scripts/smoke-cleanup.ts` | guard y borrado compartido de todas las tablas dependientes |
 | `npm test` | typecheck de tests, unitarios e integración |
 | `npm run test:coverage` | suite con cobertura V8 |
 
-La limpieza administrativa de smoke elimina relaciones de un usuario de prueba de forma física. El script actual no incluye `usos_lote`; no falla en el smoke vigente porque ese recorrido no crea usos, pero habría que actualizarlo si el smoke empieza a crearlos.
+La limpieza administrativa de smoke elimina relaciones de un usuario de prueba
+en orden, incluido `usos_lote`. Sólo admite el formato exacto
+`rodeo_smoke_<13 dígitos>`, resuelve primero un único UUID y confirma al final
+que el usuario ya no exista.
 
 El backend es ESM (`"type": "module"`). `tsconfig.json` usa target ES2022, módulos/resolución `NodeNext`, modo `strict`, incluye `src` y `scripts`, y emite a `dist`. `tsconfig.test.json` lo extiende, agrega `tests` y fuerza `noEmit`; así el typecheck de la suite también valida fixtures y Supertest sin producir artefactos.
 
@@ -931,7 +949,7 @@ Nunca se listan valores reales.
 
 En `NODE_ENV=production`, `cookieSecure=true`. `COOKIE_SAME_SITE=none` se rechaza fuera de producción. `CORS_ORIGINS` sólo acepta origins HTTP(S) sin path.
 
-## 28. Inventario completo de API: 30 endpoints
+## 28. Inventario completo de API: 29 endpoints
 
 ### Health y autenticación
 
@@ -965,12 +983,11 @@ En `NODE_ENV=production`, `cookieSecure=true`. `COOKIE_SAME_SITE=none` se rechaz
 | `GET /api/copernicus/estado` | Sí | — | `{configurado}` | servicio Copernicus/env |
 | `POST /api/lotes/satelite/actualizar` | Sí | `{loteIds}` (1–100) | analiza/persiste batch | lotes, Copernicus, mediciones |
 | `POST /api/lotes/:id/satelite/actualizar` | Sí | sin body requerido | analiza/persiste uno | lotes, Copernicus, mediciones |
-| `POST /api/clima/consultar` | Sí | `{loteIds}` (1–100) | gateway multi-lote, no persiste | lotes, establecimientos, Open-Meteo |
-| `POST /api/lotes/:id/mediciones-satelitales` | Sí | fuente, fechas, stats, score, metadata | upsert autenticado; 201 | mediciones satelitales |
+| `POST /api/lotes/clima/actualizar` | Sí | `{loteIds,origen}` (1–100) | consulta/persiste batch | lotes, Open-Meteo, consultas/días |
+| `POST /api/lotes/:id/clima/actualizar` | Sí | `{origen}` | consulta/persiste uno | lote, Open-Meteo, consultas/días |
 | `GET /api/lotes/:id/mediciones-satelitales` | Sí | limit/offset/desde/hasta/fuente | historial paginado | mediciones satelitales |
-| `POST /api/lotes/:id/clima` | Sí | origen, consultedAt, resumen, días | snapshot; dedupe auto 1 h | consultas/días clima, transacción |
 | `GET /api/lotes/:id/clima` | Sí | limit/offset/desde/hasta | snapshots y días paginados | consultas/días clima |
-| `POST /api/lotes/:id/usos` | Sí | `{fecha,origen?}` | registra uso; 201 | `usos_lote` |
+| `POST /api/lotes/:id/usos` | Sí | `{fecha,origen?}` | registra uso no futuro; 201 | `usos_lote` |
 | `GET /api/lotes/:id/usos` | Sí | limit/offset/desde/hasta | usos paginados | `usos_lote` |
 | `GET /api/lotes/:id/estado` | Sí | — | estado derivado individual | lote, mediciones, clima/días, usos |
 | `GET /api/lotes/:id/historial` | Sí | — | hasta 50 por colección | mediciones, clima/días, usos |
@@ -983,7 +1000,9 @@ En `NODE_ENV=production`, `cookieSecure=true`. `COOKIE_SAME_SITE=none` se rechaz
 | `PATCH /api/notificaciones/leidas` | Sí | — | marca todas y cuenta | `notificaciones` |
 | `PATCH /api/notificaciones/:id/leida` | Sí | — | marca una de forma idempotente | `notificaciones` |
 
-No existen actualmente `POST /api/copernicus/statistics`, endpoints `/condicion`, `/api/lotes/clima/actualizar`, creación HTTP de notificaciones ni DELETE de establecimiento.
+No existen actualmente `POST /api/copernicus/statistics`, endpoints
+`/condicion`, POST históricos de mediciones/clima, creación HTTP de
+notificaciones ni DELETE de establecimiento.
 
 ## 29. Seis diagramas compactos de flujo
 
@@ -1029,13 +1048,12 @@ LotePage → POST /lotes/:id/satelite/actualizar
 ### D. Actualización clima
 
 ```text
-React → POST /api/clima/consultar {IDs}
+React → POST /api/lotes/[IDs]/clima/actualizar {IDs/origen}
   → route clima: auth → controller clima: ownership + polígonos
-  → centroides → una llamada Open-Meteo
-  → resultados por lote → React
-  → POST /api/lotes/:id/clima por resultado ok
-  → route historial: auth → controller historial: BEGIN → consulta + días → COMMIT
-  → recarga estado/historial
+  → centroides → una llamada Open-Meteo (sin transacción abierta)
+  → por lote ok: BEGIN → lock lote → dedupe auto → consulta + días → COMMIT
+  → resultado + metadata de persistencia → React
+  → recarga estado/historial cuando corresponde
 ```
 
 ### E. Ficha de lote
@@ -1062,7 +1080,7 @@ Sidebar habilita useNotificaciones
   → UPDATE read_at → estado React/badge
 ```
 
-## 30. Inventario de `backend/src`: los 43 archivos
+## 30. Inventario de `backend/src`: los 45 archivos
 
 ### Raíz, configuración y DB
 
@@ -1102,6 +1120,13 @@ Sidebar habilita useNotificaciones
 - **Lo importan:** middleware, controllers, servicios, servidor y scripts indirectamente.
 - **Importa:** `pg` y `env`.
 - **Salida:** singleton `pool`.
+
+#### `backend/src/db/schema-verifier.ts`
+
+- **Existe para:** describir y validar el contrato estructural mínimo de PostgreSQL.
+- **Lo importan:** `scripts/verify-schema.ts` y tests unitarios.
+- **Comprueba:** ocho tablas, todas sus columnas/tipos/nullability, PK, FK, UNIQUE, CHECK e índices esenciales.
+- **Salida:** snapshot seguro de catálogo y lista de diferencias; no lee filas de negocio ni secretos.
 
 #### `backend/src/date.ts`
 
@@ -1234,10 +1259,17 @@ Sidebar habilita useNotificaciones
 #### `backend/src/services/mediciones-satelitales.ts`
 
 - **Existe para:** mapear resultados a filas y hacer upsert/transacción.
-- **Lo importan:** controllers de satélite e historial.
+- **Lo importa:** controller de satélite.
 - **Importa:** pool y tipos satelitales.
 - **Funciones:** `guardarMedicionSatelital`, `medicionesDesdeResultado`, `persistirResultadoSatelital`.
 - **Entrada/salida:** resultado o payload validado → fila retornada/efecto persistente.
+
+#### `backend/src/services/consultas-clima.ts`
+
+- **Existe para:** persistir un resultado real de Open-Meteo con sus días.
+- **Lo importa:** controller clima.
+- **Importa:** pool, errores y tipos de Open-Meteo.
+- **Función:** `persistirConsultaClima`; lock por lote, dedupe automático y transacción por snapshot.
 
 #### `backend/src/services/open-meteo.ts`
 
@@ -1245,7 +1277,7 @@ Sidebar habilita useNotificaciones
 - **Lo importa:** controller clima y tests.
 - **Importa:** Turf y GeoJSON.
 - **Clase:** `OpenMeteoClient`; `reemplazarTransporte` habilita tests; singleton `openMeteo`.
-- **Entrada/salida:** lotes con polygon → mapa `loteId → ResultadoClimaLote`.
+- **Entrada/salida:** lotes con polygon + reloj servidor → mapa `loteId → ResultadoClimaLote`; faltantes permanecen `null`.
 
 #### `backend/src/services/estado-lotes.ts`
 
@@ -1303,17 +1335,17 @@ Los nueve controllers reflejan uno a uno los nueve routers. Son funciones de Exp
 
 #### `backend/src/controllers/clima.ts`
 
-- **Existe para:** validar ownership y coordinar el gateway de Open-Meteo sin persistir.
+- **Existe para:** validar ownership y coordinar consulta + persistencia de Open-Meteo.
 - **Lo importa:** route clima.
-- **Importa:** pool, errores y servicio Open-Meteo.
-- **Función:** `consultarClima`.
+- **Importa:** pool, geometría, logger, errores y servicios Open-Meteo/clima.
+- **Funciones:** `actualizarClimaLote`, `actualizarClimaLotes`.
 
 #### `backend/src/controllers/historial.ts`
 
-- **Existe para:** persistencia/listados de satélite, clima y usos, además de estado e historial consolidados.
+- **Existe para:** listados de satélite/clima, escritura de usos, estado e historial consolidados.
 - **Lo importa:** route historial.
-- **Importa:** pool, fechas/query, estado, errores y persistencia satelital.
-- **Funciones:** ocho handlers públicos; conserva ownership, paginación, dedupe climático y la transacción del snapshot.
+- **Importa:** pool, fechas/query, estado y errores.
+- **Funciones:** seis handlers públicos; conserva ownership y paginación.
 
 #### `backend/src/controllers/notificaciones.ts`
 
@@ -1370,17 +1402,17 @@ Cada router queda como catálogo declarativo: crea su `Router`, aplica el mismo 
 
 #### `backend/src/routes/clima.ts`
 
-- **Existe para:** gateway autenticado de Open-Meteo.
+- **Existe para:** actualización climática individual/batch autenticada.
 - **Lo importa:** app.
 - **Importa:** controller clima, auth y `asyncHandler`.
-- **Cableado:** `POST /consultar` autenticado.
+- **Cableado:** `POST /clima/actualizar` y `POST /:id/clima/actualizar` bajo `/api/lotes`.
 
 #### `backend/src/routes/historial.ts`
 
-- **Existe para:** persistencia/listados satélite-clima-usos, estado individual e historial compatible.
+- **Existe para:** lecturas satélite/clima, usos, estado individual e historial compatible.
 - **Lo importa:** app bajo `/api/lotes`.
 - **Importa:** controller historial, auth y `asyncHandler`.
-- **Cableado:** conserva los ocho endpoints y su orden exacto.
+- **Cableado:** seis endpoints; los POST históricos de satélite/clima no existen.
 
 #### `backend/src/routes/notificaciones.ts`
 
@@ -1425,7 +1457,7 @@ Deberías poder explicar sin mirar:
 - middleware, route, service y helper;
 - SQL parametrizado, pool e índices;
 - DATE versus TIMESTAMPTZ;
-- dedupe climático automático por `created_at` de una hora;
+- dedupe climático automático atómico por lock y `created_at` de una hora;
 - upsert satelital por lote/fuente/fecha;
 - cómo `DISTINCT ON` y queries batch evitan N+1;
 - Vite proxy, CORS, SameSite y Secure;
@@ -1492,8 +1524,8 @@ Deberías poder explicar sin mirar:
 43. **¿Cómo se elige fallback radar?** Sólo si el radar válido es estrictamente más reciente o no hay óptica válida.
 44. **¿Por qué el clima usa centroide?** Open-Meteo recibe puntos; el lote está guardado como polígono.
 45. **¿Cómo evita una llamada de clima por lote?** Envía listas de coordenadas en una única request multi-coordinate.
-46. **¿Consultar clima ya lo persiste?** No. El frontend hace después un POST por lote exitoso al endpoint histórico.
-47. **¿Qué diferencia hay entre consulta manual y automática?** La manual siempre puede crear snapshot; la automática se omite si ya se persistió una en la última hora.
+46. **¿Consultar clima ya lo persiste?** Sí. El mismo endpoint backend consulta Open-Meteo y persiste cada resultado válido.
+47. **¿Qué diferencia hay entre consulta manual y automática?** La manual siempre puede crear snapshot; la automática se omite si ya se persistió otra automática en la última hora.
 48. **¿Qué es paginación?** Pedir una porción con limit/offset y recibir total/hayMas.
 49. **¿Cómo evitan N+1 en estado?** Consultan lo último para todos los IDs con queries agrupadas y mapas en memoria.
 50. **¿Qué es el proxy de Vite?** Reenvía `/api` de localhost:5173 al backend 3001 durante desarrollo.
@@ -1578,24 +1610,22 @@ Deberías poder explicar sin mirar:
 - PostgreSQL/Neon como fuente de establecimiento/lotes; sin fallback `localStorage`;
 - históricos S1/S2, clima y usos;
 - Copernicus centralizado en backend y separado por fuente;
-- Open-Meteo centralizado como gateway backend multi-coordinate;
-- persistencia climática disparada por el frontend tras resultados exitosos;
+- Open-Meteo centralizado como actualización backend-owned multi-coordinate;
+- persistencia climática en la misma operación, con origen, nulls reales y dedupe atómico;
 - estado individual/batch derivado y ficha paginada;
 - notificaciones de lectura/marcado y UI base;
 - CORS, cookies configurables, Helmet, body limit, rate limit, request ID, logs, health y shutdown;
-- 30 endpoints, 8 tablas, tests unitarios/integración y CI de validación.
+- 29 endpoints, 8 tablas, 47 unitarios/51 integraciones declarados y CI de validación.
 
 ### PLANIFICADO / PENDIENTE
 
 - proveedor, dominios, CORS/cookies finales y automatización de deploy;
 - Google OAuth;
 - reglas automáticas, tipos finales y deduplicación de notificaciones;
-- posible persistencia de clima completamente server-side en un solo flujo, si se decide;
 - calibración agronómica real del scoring;
 - política de restauración/archivo de lotes e historial de geometrías;
 - semántica segura para eliminar establecimiento;
 - store distribuido de rate limit si hay múltiples instancias;
-- revisar validación backend de fechas futuras de uso y ausencia numérica Open-Meteo.
 
 ### FUERA DE ALCANCE ACTUAL / NO IMPLEMENTADO
 
@@ -1618,7 +1648,7 @@ Deberías poder explicar sin mirar:
 | Lotes | API rodeo, `RodeoApp`, ficha, satélite/clima/estado, ownership | es entidad central de casi todo historial |
 | Soft delete | todas las queries de lote/historial/estado | olvidar `deleted_at IS NULL` puede reexponer datos |
 | Satélite | analyzer, evalscripts, scoring, servicio CDSE, persistencia, DTO frontend/tests | pipeline completo y dos fuentes físicas |
-| Clima | gateway, fachada frontend, persistencia histórica, estado/ficha/tests | consulta y guardado son requests separados |
+| Clima | controller, Open-Meteo, persistencia transaccional, fachada frontend, estado/ficha/tests | consulta y guardado son una operación |
 | Estado | servicio `estado-lotes`, endpoints individual/batch, tipos/ficha | no hay tabla que aisle el cambio |
 | Historial/paginación | `http/query`, route/controller historial, `api/historial`, LotePage | filtros y metadata son contrato compartido |
 | Notificaciones | tabla, route/controller, API, hook, Sidebar y tests | conteo global y página deben permanecer coherentes |
@@ -1628,36 +1658,26 @@ Deberías poder explicar sin mirar:
 
 ## 37. Segunda pasada: diferencias entre documentación y código
 
-Estas diferencias se reportan como deudas históricas y no fueron corregidas por el refactor route/controller.
+La etapa de persistencia corrigió el doble request climático, los POST históricos
+controlados por cliente, los nulls convertidos a cero, la fecha futura, el
+cleanup incompleto y el dedupe concurrente. Permanecen estos riesgos/deudas:
 
-1. **Cantidad de tablas:** partes de README/CODEX_START_HERE todavía dicen “siete tablas” o enumeran sólo las iniciales. El código/migraciones actuales tienen ocho por `usos_lote`.
-2. **`localStorage`:** README y `PROJECT_DIRECTION.md` conservan párrafos que dicen que la migración de establecimiento/lotes es futura o que el mapa aún depende de `localStorage`. El frontend vigente carga y muta por API/Neon, sin fallback.
-3. **Pantalla de onboarding:** varios textos describen `SetupPendingScreen`; `App.tsx` no la importa. El usuario pendiente entra a `RodeoApp` y el onboarding ocurre dentro del mapa.
-4. **Estado de sesión:** `AUTH_ONBOARDING.md` y `OPEN_QUESTIONS.md` aún contienen bloques donde cookie/mecanismo/duración parecen abiertos, aunque secciones posteriores y el código ya fijan JWT HttpOnly por 7 días y password mínimo 8.
-5. **Endpoints propuestos antiguos:** `API_CONTRACTS.md` conserva `/condicion/actualizar`, `/condicion`, `/api/lotes/clima/actualizar` y `/clima/historial`. No existen; la sección de inventario anterior enumera las rutas reales.
-6. **Copernicus histórico:** hay textos donde mover parsing/scoring/persistencia al backend aparece pendiente. Hoy todo ese pipeline vive en Express; `/api/copernicus/statistics` no existe.
-7. **Open-Meteo “completo”:** el gateway sí está en backend, pero la consulta `POST /api/clima/consultar` no persiste. El frontend hace luego `POST /api/lotes/:id/clima`. No es un único flujo server-side atómico.
-8. **“Cada observación recuperada”:** algunos docs sugieren guardar todas las observaciones que devuelve Copernicus. El analyzer usa todas para elegir/tendencia, pero persiste sólo la última observación relevante S2/S1 de cada actualización.
-9. **Ficha:** `obtenerHistorialLote()` y `/api/lotes/:id/historial` existen, pero `LotePage` usa estado + tres listados paginados. `LoteDetallePanel` tampoco es la ficha de ruta vigente.
-10. **Notificaciones:** bloques viejos aún dicen UI pendiente; código actual ya tiene API, hook, panel y badge. Continúa pendiente la generación automática.
-11. **Terminología de recomendación:** backend/docs definen score provisional, pero `CondicionPanel` muestra la etiqueta visual “Recomendado” para el mejor score y `src/copernicus/types.ts` conserva terminología de aptitud. Eso puede confundir el oral: no existe recomendador final.
-12. **README de certificados:** todavía menciona que “el plugin de Vite” levanta la CA. El código actual que arma la cadena CA está en `backend/src/services/copernicus.ts`.
-13. **Validación GeoJSON:** los documentos suelen decir “Polygon válido”; la función real hace validación estructural y delega operaciones a Turf, pero no valida explícitamente cierre, rangos o toda topología.
-14. **Fecha de uso:** la UI bloquea futuras, el backend no. Un cliente HTTP puede registrar una fecha futura válida.
-15. **Valores faltantes Open-Meteo:** la regla documental prioriza ausencia explícita, pero `aNumero()` convierte `null`/inválido a 0. Debe considerarse una decisión/riesgo de calidad de datos, no una ausencia explícita.
-16. **Endpoint raw de mediciones:** aunque el flujo satelital está centralizado, sigue existiendo un POST autenticado que acepta estadísticas del cliente. Ownership y validación numérica existen, pero el dato no necesariamente proviene de Copernicus.
-17. **Migraciones:** los docs hablan de mecanismo versionado; los archivos están numerados, pero no hay ledger. `migrate.ts` reejecuta todos con `IF NOT EXISTS` en cada corrida.
-18. **Cleanup smoke:** no borra `usos_lote`; hoy no afecta el recorrido smoke porque no crea usos, pero sí afectaría una ampliación.
-19. **CI versus suite completa:** la suite declara 91 casos, pero CI ejecuta sólo los 42 unitarios del backend; las 49 integraciones requieren una DB externa y no corren en el workflow.
-20. **Dedupe climático:** el request trae `origen`, pero `consultas_clima` no lo guarda. Una persistencia automática inmediata se omite también si el snapshot reciente fue manual. Además, check e insert no están protegidos por lock/constraint, por lo que dos requests automáticos realmente simultáneos podrían superar el dedupe.
-21. **Autoridad de históricos:** los POST autenticados de mediciones y clima aceptan números enviados por el cliente. El flujo oficial usa datos externos reales, pero esos endpoints permiten a un usuario crear o, mediante upsert satelital, reemplazar datos de su propio historial sin prueba de origen.
-22. **Concurrencia geométrica:** crear lote bloquea el establecimiento, pero `PATCH /api/establecimiento` no envuelve validación+update en una transacción con el mismo lock. Ediciones concurrentes de establecimiento/lotes, o de dos lotes distintos, podrían atravesar validaciones sobre estados anteriores y violar el invariante espacial. No hay constraint espacial DB que lo corrija.
-23. **Status de Copernicus:** el servicio construye `ApiError` 502/503, pero el analizador lo convierte a `ResultadoLote.estado="error"`; el endpoint devuelve 200. Documentar o monitorear sólo status HTTP ocultaría esa indisponibilidad funcional.
+1. **Pantalla de onboarding:** algunos textos históricos nombran `SetupPendingScreen`; el flujo vigente ocurre dentro de `RodeoApp`.
+2. **Estado de sesión:** documentos históricos aún contienen decisiones previas, aunque el código fija JWT HttpOnly por 7 días y password mínimo 8.
+3. **“Cada observación recuperada”:** el analyzer usa varias fechas para elegir/tendencia, pero persiste sólo la última observación relevante S2/S1 de cada actualización.
+4. **Ficha:** `LotePage` usa estado + tres listados paginados; `LoteDetallePanel` y el endpoint consolidado de historial no son su camino principal.
+5. **Terminología de recomendación:** `CondicionPanel` todavía usa una etiqueta visual “Recomendado”, aunque no existe recomendador final.
+6. **Validación GeoJSON:** es estructural y usa Turf, pero no valida explícitamente toda topología/rangos.
+7. **Ledger de migraciones:** los archivos son forward e idempotentes, pero no hay tabla de versiones; `migrate.ts` los recorre todos.
+8. **CI versus suite completa:** las 51 integraciones requieren una DB externa aislada; no corren en el workflow sin ese servicio/secreto.
+9. **Concurrencia geométrica:** no hay constraint espacial DB; operaciones geométricas concurrentes distintas merecen una etapa específica.
+10. **Status de Copernicus:** indisponibilidad por lote se representa dentro de un HTTP 200 con `resultado.estado="error"`; el monitoreo debe mirar el body.
+11. **Despliegue:** proveedor, dominios, CORS/cookies finales y store distribuido de rate limit siguen pendientes.
 
 ### Verificación final del inventario
 
-- Archivos `backend/src` inventariados: 43 de 43.
-- Endpoints contados desde declaraciones reales de routers: 30.
+- Archivos `backend/src` inventariados: 45 de 45.
+- Endpoints contados desde declaraciones reales de routers: 29.
 - Tablas contadas desde migraciones: 8.
 - Routers montados en `app.ts`: 9.
 - Controllers conectados desde esos routers: 9.

@@ -55,6 +55,79 @@ async function insertarNotificacion(username: string, titulo: string, createdAt:
   return result.rows[0];
 }
 
+type EstadisticaSeed = { media?: number; mediana?: number };
+type MedicionSeed = {
+  fuente: 'sentinel-1' | 'sentinel-2';
+  observedAt: string;
+  consultedAt: string | Date;
+  coberturaValida?: number;
+  ndvi?: EstadisticaSeed;
+  ndmi?: EstadisticaSeed;
+  ndwi?: EstadisticaSeed;
+  evi?: EstadisticaSeed;
+  rvi?: EstadisticaSeed;
+  puntaje?: number;
+  categoria?: string;
+  alertas?: string[];
+};
+
+async function insertarMedicion(loteId: string, payload: MedicionSeed) {
+  return pool.query(
+    `INSERT INTO mediciones_satelitales
+       (lote_id, fuente, observed_at, consulted_at, cobertura_valida,
+        ndvi_media, ndvi_mediana, ndmi_media, ndmi_mediana, ndwi_media, ndwi_mediana,
+        evi_media, evi_mediana, rvi_media, rvi_mediana, puntaje, categoria, alertas)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb)
+     ON CONFLICT (lote_id, fuente, observed_at) DO UPDATE SET
+       consulted_at = EXCLUDED.consulted_at,
+       cobertura_valida = EXCLUDED.cobertura_valida,
+       ndvi_media = EXCLUDED.ndvi_media, ndvi_mediana = EXCLUDED.ndvi_mediana,
+       ndmi_media = EXCLUDED.ndmi_media, ndmi_mediana = EXCLUDED.ndmi_mediana,
+       ndwi_media = EXCLUDED.ndwi_media, ndwi_mediana = EXCLUDED.ndwi_mediana,
+       evi_media = EXCLUDED.evi_media, evi_mediana = EXCLUDED.evi_mediana,
+       rvi_media = EXCLUDED.rvi_media, rvi_mediana = EXCLUDED.rvi_mediana,
+       puntaje = EXCLUDED.puntaje, categoria = EXCLUDED.categoria, alertas = EXCLUDED.alertas`,
+    [
+      loteId, payload.fuente, payload.observedAt, payload.consultedAt, payload.coberturaValida ?? null,
+      payload.ndvi?.media ?? null, payload.ndvi?.mediana ?? null,
+      payload.ndmi?.media ?? null, payload.ndmi?.mediana ?? null,
+      payload.ndwi?.media ?? null, payload.ndwi?.mediana ?? null,
+      payload.evi?.media ?? null, payload.evi?.mediana ?? null,
+      payload.rvi?.media ?? null, payload.rvi?.mediana ?? null,
+      payload.puntaje ?? null, payload.categoria ?? null, JSON.stringify(payload.alertas ?? null),
+    ],
+  );
+}
+
+async function insertarClima(loteId: string, payload = clima('manual')): Promise<string> {
+  const consulta = await pool.query<{ id: string }>(
+    `INSERT INTO consultas_clima
+       (lote_id, consulted_at, lluvia_ultimos_7_dias, lluvia_proximos_dias, categoria, origen)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [loteId, new Date(payload.consultedAt), payload.lluviaUltimos7Dias, payload.lluviaProximosDias, payload.categoria, payload.origen],
+  );
+  for (const dia of payload.dias) {
+    await pool.query(
+      `INSERT INTO dias_clima (consulta_clima_id, fecha, lluvia_mm, temp_min, temp_max, es_pronostico)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [consulta.rows[0].id, dia.fecha, dia.lluviaMm, dia.tempMin, dia.tempMax, dia.esPronostico],
+    );
+  }
+  return consulta.rows[0].id;
+}
+
+function registroClima(offset = 0, lluviaFaltante = false) {
+  const fechas = Array.from({ length: 12 }, (_, i) => `2026-08-${String(10 + i).padStart(2, '0')}`);
+  const lluvias: Array<number | null> = Array(12).fill(1 + offset);
+  if (lluviaFaltante) lluvias[2] = null;
+  return { daily: {
+    time: fechas,
+    precipitation_sum: lluvias,
+    temperature_2m_max: Array(12).fill(20 + offset),
+    temperature_2m_min: Array(12).fill(8 + offset),
+  } };
+}
+
 function fechaUtc(diasAtras: number): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() - diasAtras);
@@ -307,37 +380,154 @@ integration('API backend de RODEO', () => {
     });
   });
 
-  describe('gateway Open-Meteo', () => {
-    test('requiere sesión y valida loteIds', async () => {
-      expect((await request(app).post('/api/clima/consultar').send({ loteIds: [] })).status).toBe(401);
-      const { agent } = await prepararLote('climate_gateway_invalid_user');
-      expect((await agent.post('/api/clima/consultar').send({ loteIds: 'no-array' })).body.error.code).toBe('INVALID_LOT_IDS');
+  describe('actualización climática centralizada', () => {
+    test('requiere sesión, valida IDs y origen, y retira escrituras legacy', async () => {
+      expect((await request(app).post('/api/lotes/clima/actualizar').send({ loteIds: [], origen: 'manual' })).status).toBe(401);
+      const { agent, lot } = await prepararLote('climate_update_validation_user');
+      expect((await agent.post('/api/lotes/no-es-uuid/clima/actualizar').send({ origen: 'manual' })).body.error.code).toBe('INVALID_LOT_ID');
+      expect((await agent.post('/api/lotes/clima/actualizar').send({ loteIds: 'no-array', origen: 'manual' })).body.error.code).toBe('INVALID_LOT_IDS');
+      expect((await agent.post('/api/lotes/clima/actualizar').send({ loteIds: [lot.id], origen: 'desconocido' })).body.error.code).toBe('INVALID_CLIMATE_ORIGIN');
+      expect((await agent.post('/api/clima/consultar').send({ loteIds: [lot.id] })).status).toBe(404);
+      expect((await agent.post(`/api/lotes/${lot.id}/clima`).send(clima())).status).toBe(404);
+      expect((await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionOptica)).status).toBe(404);
     });
 
-    test('consulta varios lotes con una llamada externa y conserva la asociación', async () => {
-      const agent = await registrar('climate_gateway_user');
+    test('consulta y persiste un lote con polygon y reloj del backend', async () => {
+      const { agent, lot } = await prepararLote('climate_update_single_user');
+      let urlConsultada = '';
+      const anterior = openMeteo.reemplazarTransporte(async (url) => {
+        urlConsultada = url;
+        return { ok: true, status: 200, json: async () => registroClima() };
+      });
+      try {
+        const antes = Date.now();
+        const response = await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({
+          origen: 'manual',
+          lluviaUltimos7Dias: 999,
+          consultedAt: '2000-01-01T00:00:00.000Z',
+        });
+        expect(response.status).toBe(200);
+        expect(response.body.resultado).toMatchObject({ estado: 'ok', loteId: lot.id, persistencia: { guardado: true } });
+        expect(new URL(urlConsultada).searchParams.get('latitude')).toBe('1.5000');
+        const consultas = await pool.query('SELECT consulted_at, lluvia_ultimos_7_dias, origen FROM consultas_clima WHERE lote_id = $1', [lot.id]);
+        expect(consultas.rows).toHaveLength(1);
+        expect(consultas.rows[0].consulted_at.getTime()).toBeGreaterThanOrEqual(antes);
+        expect(consultas.rows[0].lluvia_ultimos_7_dias).toBe(7);
+        expect(consultas.rows[0].origen).toBe('manual');
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM dias_clima')).rows[0].count).toBe(12);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('batch usa una llamada multi-coordinate, mantiene asociación y aísla resultados inválidos', async () => {
+      const agent = await registrar('climate_update_batch_user');
       await crearEstablecimiento(agent);
       const first = await crearLote(agent, 1, 2);
       const second = await crearLote(agent, 3, 4);
+      let llamadas = 0;
       const anterior = openMeteo.reemplazarTransporte(async (url) => {
+        llamadas += 1;
         expect(new URL(url).searchParams.get('latitude')?.split(',')).toHaveLength(2);
-        return { ok: true, status: 200, json: async () => ({ daily: { time: Array.from({ length: 12 }, (_, i) => `2026-08-${String(10 + i).padStart(2, '0')}`), precipitation_sum: Array(12).fill(1), temperature_2m_max: Array(12).fill(20), temperature_2m_min: Array(12).fill(8) } }) };
+        return { ok: true, status: 200, json: async () => [registroClima(), { daily: { time: [] } }] };
       });
       try {
-        const response = await agent.post('/api/clima/consultar').send({ loteIds: [first.id, second.id] });
+        const response = await agent.post('/api/lotes/clima/actualizar').send({ loteIds: [first.id, second.id], origen: 'manual' });
         expect(response.status).toBe(200);
         expect(Object.keys(response.body.resultados)).toEqual([first.id, second.id]);
         expect(response.body.resultados[first.id].estado).toBe('ok');
-        expect(response.body.resultados[first.id].clima.hoy.fecha).toBe('2026-08-17');
+        expect(response.body.resultados[second.id].estado).toBe('error');
+        expect(llamadas).toBe(1);
+        const filas = await pool.query('SELECT lote_id FROM consultas_clima ORDER BY lote_id');
+        expect(filas.rows.map((row) => row.lote_id)).toEqual([first.id]);
       } finally { openMeteo.reemplazarTransporte(anterior); }
     });
 
     test('rechaza lote ajeno y soft-deleted sin consultar Open-Meteo', async () => {
-      const owner = await prepararLote('climate_gateway_owner');
-      const other = await prepararLote('climate_gateway_other');
-      expect((await other.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
-      await owner.agent.delete(`/api/lotes/${owner.lot.id}`);
-      expect((await owner.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
+      const owner = await prepararLote('climate_update_owner');
+      const other = await prepararLote('climate_update_other');
+      let llamadas = 0;
+      const anterior = openMeteo.reemplazarTransporte(async () => { llamadas += 1; return { ok: true, status: 200, json: async () => registroClima() }; });
+      try {
+        expect((await other.agent.post('/api/lotes/clima/actualizar').send({ loteIds: [owner.lot.id], origen: 'manual' })).body.error.code).toBe('LOT_NOT_FOUND');
+        await owner.agent.delete(`/api/lotes/${owner.lot.id}`);
+        expect((await owner.agent.post(`/api/lotes/${owner.lot.id}/clima/actualizar`).send({ origen: 'manual' })).body.error.code).toBe('LOT_NOT_FOUND');
+        expect(llamadas).toBe(0);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('batch valida ownership completo antes del upstream y no persiste parcialmente', async () => {
+      const owner = await prepararLote('climate_batch_owner');
+      const other = await prepararLote('climate_batch_other');
+      let llamadas = 0;
+      const anterior = openMeteo.reemplazarTransporte(async () => { llamadas += 1; return { ok: true, status: 200, json: async () => registroClima() }; });
+      try {
+        const response = await owner.agent.post('/api/lotes/clima/actualizar').send({ loteIds: [owner.lot.id, other.lot.id], origen: 'manual' });
+        expect(response.status).toBe(404);
+        expect(response.body.error.code).toBe('LOT_NOT_FOUND');
+        expect(llamadas).toBe(0);
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima')).rows[0].count).toBe(0);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('no persiste errores upstream y preserva null sin inventar cero', async () => {
+      const { agent, lot } = await prepararLote('climate_update_null_user');
+      let anterior = openMeteo.reemplazarTransporte(async () => ({ ok: false, status: 503, json: async () => ({}) }));
+      try {
+        expect((await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' })).body.resultado.estado).toBe('error');
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima')).rows[0].count).toBe(0);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+
+      anterior = openMeteo.reemplazarTransporte(async () => ({ ok: true, status: 200, json: async () => registroClima(0, true) }));
+      try {
+        const response = await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' });
+        expect(response.body.resultado).toMatchObject({ estado: 'ok', categoria: null, clima: { lluviaUltimos7Dias: null } });
+        const fila = await pool.query('SELECT lluvia_ultimos_7_dias, categoria FROM consultas_clima WHERE lote_id = $1', [lot.id]);
+        expect(fila.rows[0]).toMatchObject({ lluvia_ultimos_7_dias: null, categoria: null });
+        const dia = await pool.query("SELECT lluvia_mm FROM dias_clima WHERE fecha = '2026-08-12'::date");
+        expect(dia.rows[0].lluvia_mm).toBeNull();
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('datos meteorológicos completamente ausentes producen error sin historial', async () => {
+      const { agent, lot } = await prepararLote('climate_update_missing_data_user');
+      const anterior = openMeteo.reemplazarTransporte(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ daily: { time: registroClima().daily.time, precipitation_sum: Array(12).fill(null) } }),
+      }));
+      try {
+        const response = await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' });
+        expect(response.body.resultado).toMatchObject({ estado: 'error', mensaje: expect.stringContaining('Sin datos') });
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(0);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('deduplica automáticas concurrentes de forma atómica y conserva manuales', async () => {
+      const { agent, lot } = await prepararLote('climate_update_dedupe_user');
+      const anterior = openMeteo.reemplazarTransporte(async () => ({ ok: true, status: 200, json: async () => registroClima() }));
+      try {
+        const automáticas = await Promise.all([
+          agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'automatico' }),
+          agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'automatico' }),
+        ]);
+        expect(automáticas.every((response) => response.status === 200)).toBe(true);
+        expect(automáticas.map((response) => response.body.resultado.persistencia.guardado).sort()).toEqual([false, true]);
+        expect((await pool.query("SELECT COUNT(*)::int AS count FROM consultas_clima WHERE lote_id = $1 AND origen = 'automatico'", [lot.id])).rows[0].count).toBe(1);
+        await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' });
+        await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' });
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(3);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('una manual reciente no bloquea la primera automática', async () => {
+      const { agent, lot } = await prepararLote('climate_update_origin_scope_user');
+      const anterior = openMeteo.reemplazarTransporte(async () => ({ ok: true, status: 200, json: async () => registroClima() }));
+      try {
+        await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'manual' });
+        const automatico = await agent.post(`/api/lotes/${lot.id}/clima/actualizar`).send({ origen: 'automatico' });
+        expect(automatico.body.resultado.persistencia.guardado).toBe(true);
+        const origenes = await pool.query('SELECT origen FROM consultas_clima WHERE lote_id = $1 ORDER BY created_at', [lot.id]);
+        expect(origenes.rows.map((row) => row.origen)).toEqual(['manual', 'automatico']);
+      } finally { openMeteo.reemplazarTransporte(anterior); }
     });
   });
 
@@ -430,8 +620,8 @@ integration('API backend de RODEO', () => {
         other.patch(`/api/lotes/${owner.lot.id}`).send({ activo: false }),
         other.delete(`/api/lotes/${owner.lot.id}`),
         other.get(`/api/lotes/${owner.lot.id}/historial`),
-        other.post(`/api/lotes/${owner.lot.id}/mediciones-satelitales`).send(medicionOptica),
-        other.post(`/api/lotes/${owner.lot.id}/clima`).send(clima()),
+        other.post(`/api/lotes/${owner.lot.id}/satelite/actualizar`),
+        other.post(`/api/lotes/${owner.lot.id}/clima/actualizar`).send({ origen: 'manual' }),
         other.post(`/api/lotes/${owner.lot.id}/usos`).send({ fecha: '2026-08-20' }),
         other.get(`/api/lotes/${owner.lot.id}/estado`),
       ];
@@ -501,89 +691,22 @@ integration('API backend de RODEO', () => {
     });
   });
 
-  describe('persistencia satelital', () => {
-    test('separa Sentinel-2 y Sentinel-1 y conserva sólo sus campos aplicables', async () => {
-      const { agent, lot } = await prepararLote('satellite_user');
-      const optical = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionOptica);
-      const radar = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionRadar);
-      expect(optical.status).toBe(201);
-      expect(radar.status).toBe(201);
-      expect(optical.body.medicion.ndvi.mediana).toBe(0.52);
-      expect(optical.body.medicion.observedAt).toBe('2026-08-16');
-      expect(optical.body.medicion.consultedAt).toBe('2026-08-20T12:00:00.000Z');
-      expect(optical.body.medicion.rvi.mediana).toBeNull();
-      expect(radar.body.medicion.rvi.mediana).toBe(0.62);
-      expect(radar.body.medicion.ndvi.mediana).toBeNull();
-      expect(radar.body.medicion.puntaje).toBeNull();
-      expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(2);
-    });
-
-    test('hace upsert por lote, fuente y fecha, pero mantiene fuentes separadas', async () => {
-      const { agent, lot } = await prepararLote('upsert_user');
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionOptica);
-      const updated = { ...medicionOptica, consultedAt: '2026-08-20T13:00:00.000Z', puntaje: 90 };
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(updated);
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionRadar);
-      const rows = await pool.query('SELECT fuente, observed_at, puntaje, consulted_at FROM mediciones_satelitales WHERE lote_id = $1 ORDER BY fuente', [lot.id]);
-      expect(rows.rows).toHaveLength(2);
-      expect(rows.rows[0].observed_at).toBe('2026-08-16');
-      expect(rows.rows.find((row) => row.fuente === 'sentinel-2').puntaje).toBe(90);
-    });
-
-    test('persiste alertas Sentinel-2 como JSON y las conserva en el upsert', async () => {
-      const { agent, lot } = await prepararLote('satellite_alerts_user');
-      const payload = { ...medicionOptica, alertas: ['dato antiguo', 'cobertura baja'] };
-      const primera = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(payload);
-      expect(primera.status).toBe(201);
-
-      const historial = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?fuente=sentinel-2`);
-      expect(historial.status).toBe(200);
-      expect(historial.body.mediciones[0].alertas).toEqual(['dato antiguo', 'cobertura baja']);
-
-      const segunda = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...payload, alertas: ['cobertura actualizada'], puntaje: 90 });
-      expect(segunda.status).toBe(201);
-      expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2', [lot.id, 'sentinel-2'])).rows[0].count).toBe(1);
-      expect((await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?fuente=sentinel-2`)).body.mediciones[0].alertas).toEqual(['cobertura actualizada']);
-    });
-
-    test('rechaza fuente, fecha y estadísticas inválidas', async () => {
-      const { agent, lot } = await prepararLote('invalid_satellite_user');
-      expect((await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, fuente: 'fake' })).body.error.code).toBe('INVALID_SOURCE');
-      expect((await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, observedAt: '16/08/2026' })).body.error.code).toBe('INVALID_DATE');
-      expect((await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, ndvi: { mediana: 'no-numero' } })).body.error.code).toBe('INVALID_NUMBER');
-    });
-  });
-
-  describe('clima y transacciones', () => {
-    test('guarda consulta y días con forecast y valores meteorológicos', async () => {
-      const { agent, lot } = await prepararLote('climate_user');
-      const response = await agent.post(`/api/lotes/${lot.id}/clima`).send(clima());
-      expect(response.status).toBe(201);
-      const rows = await pool.query('SELECT c.id, d.fecha, d.es_pronostico, d.lluvia_mm FROM consultas_clima c JOIN dias_clima d ON d.consulta_clima_id = c.id WHERE c.lote_id = $1 ORDER BY d.fecha', [lot.id]);
-      expect(rows.rows).toHaveLength(2);
-      expect(rows.rows.map((row) => row.es_pronostico)).toEqual([false, true]);
-      expect(rows.rows[0].lluvia_mm).toBe(2.5);
-    });
-
-    test('revierte consulta y días si un día inválido falla dentro de la transacción', async () => {
-      const { agent, lot } = await prepararLote('climate_transaction_user');
-      const payload = clima();
-      payload.dias.push({ fecha: '2026-08-22', lluviaMm: 1, tempMin: 10, tempMax: 20, esPronostico: 'no' as never });
-      expect((await agent.post(`/api/lotes/${lot.id}/clima`).send(payload)).status).toBe(400);
-      expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(0);
-      expect((await pool.query('SELECT COUNT(*)::int AS count FROM dias_clima')).rows[0].count).toBe(0);
-    });
-
-    test('deduplica automático reciente y conserva snapshots manuales', async () => {
-      const { agent, lot } = await prepararLote('climate_origin_user');
-      const automatic = clima('automatico');
-      expect((await agent.post(`/api/lotes/${lot.id}/clima`).send(automatic)).status).toBe(201);
-      const repeated = await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...automatic, lluviaUltimos7Dias: 99 });
-      expect(repeated.status).toBe(200);
-      expect(repeated.body.omitido).toBe('reciente');
-      expect((await agent.post(`/api/lotes/${lot.id}/clima`).send(clima())).status).toBe(201);
-      expect((await agent.post(`/api/lotes/${lot.id}/clima`).send(clima())).status).toBe(201);
-      expect((await pool.query('SELECT COUNT(*)::int AS count FROM consultas_clima WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(3);
+  describe('lectura de persistencia satelital', () => {
+    test('mantiene fuentes separadas, upsert, DATE y TIMESTAMPTZ al leer historial', async () => {
+      const { agent, lot } = await prepararLote('satellite_history_user');
+      await insertarMedicion(lot.id, medicionOptica);
+      await insertarMedicion(lot.id, { ...medicionOptica, consultedAt: '2026-08-20T13:00:00.000Z', puntaje: 90, alertas: ['actualizada'] });
+      await insertarMedicion(lot.id, medicionRadar);
+      const response = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales`);
+      expect(response.status).toBe(200);
+      expect(response.body.mediciones).toHaveLength(2);
+      expect(response.body.mediciones.find((item: { fuente: string }) => item.fuente === 'sentinel-2')).toMatchObject({
+        observedAt: '2026-08-16',
+        consultedAt: '2026-08-20T13:00:00.000Z',
+        puntaje: 90,
+        alertas: ['actualizada'],
+      });
+      expect(response.body.mediciones.find((item: { fuente: string }) => item.fuente === 'sentinel-1').rvi.mediana).toBe(0.62);
     });
   });
 
@@ -599,10 +722,18 @@ integration('API backend de RODEO', () => {
       expect((await pool.query('SELECT COUNT(*)::int AS count FROM usos_lote WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(2);
     });
 
+    test('rechaza fechas de uso futuras en el backend', async () => {
+      const { agent, lot } = await prepararLote('future_usage_user');
+      const response = await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2999-01-01' });
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('FUTURE_USE_DATE');
+      expect((await pool.query('SELECT COUNT(*)::int AS count FROM usos_lote WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(0);
+    });
+
     test('historial devuelve satélite, clima y usos únicamente del lote pedido', async () => {
       const { agent, lot } = await prepararLote('history_user');
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionRadar);
-      await agent.post(`/api/lotes/${lot.id}/clima`).send(clima());
+      await insertarMedicion(lot.id, medicionRadar);
+      await insertarClima(lot.id);
       await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2026-08-20' });
       const history = await agent.get(`/api/lotes/${lot.id}/historial`);
       expect(history.status).toBe(200);
@@ -611,13 +742,21 @@ integration('API backend de RODEO', () => {
       expect(history.body.usos).toHaveLength(1);
       expect(history.body.satelite[0].fuente).toBe('sentinel-1');
     });
+
+    test('historial climático expone el origen persistido, incluido legacy', async () => {
+      const { agent, lot } = await prepararLote('history_climate_origin_user');
+      await insertarClima(lot.id, { ...clima('manual'), origen: 'legacy' as never });
+      const response = await agent.get(`/api/lotes/${lot.id}/clima`);
+      expect(response.status).toBe(200);
+      expect(response.body.consultas[0].origen).toBe('legacy');
+    });
   });
 
   describe('paginación y filtros de historial', () => {
     test('pagina mediciones con total y hayMas, y filtra por fuente y fechas', async () => {
       const { agent, lot } = await prepararLote('pagination_satellite_user');
       for (const [fuente, fechas] of [['sentinel-2', ['2026-08-16', '2026-08-17', '2026-08-18']], ['sentinel-1', ['2026-08-10']]] as const) {
-        for (const observedAt of fechas) await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...(fuente === 'sentinel-2' ? medicionOptica : medicionRadar), fuente, observedAt });
+        for (const observedAt of fechas) await insertarMedicion(lot.id, { ...(fuente === 'sentinel-2' ? medicionOptica : medicionRadar), fuente, observedAt });
       }
       const primera = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?limit=2&offset=0`);
       expect(primera.body.mediciones).toHaveLength(2);
@@ -637,7 +776,7 @@ integration('API backend de RODEO', () => {
       expect(usos.body.usos.map((item: { fecha: string }) => item.fecha)).toEqual(['2026-08-16', '2026-08-15']);
       expect(usos.body.paginacion).toEqual({ limit: 2, offset: 0, total: 3, hayMas: true });
       for (const [dia, lluvia] of [['2026-08-16', 1], ['2026-08-17', 2], ['2026-08-18', 3]] as const) {
-        await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: `${dia}T12:00:00.000Z`, dias: [{ fecha: dia, lluviaMm: lluvia, tempMin: 8, tempMax: 20, esPronostico: false }] });
+        await insertarClima(lot.id, { ...clima('manual'), consultedAt: `${dia}T12:00:00.000Z`, dias: [{ fecha: dia, lluviaMm: lluvia, tempMin: 8, tempMax: 20, esPronostico: false }] });
       }
       const climaPage = await agent.get(`/api/lotes/${lot.id}/clima?limit=2&offset=1&desde=2026-08-17&hasta=2026-08-18`);
       expect(climaPage.body.consultas).toHaveLength(1);
@@ -656,12 +795,12 @@ integration('API backend de RODEO', () => {
   describe('estado actual consolidado', () => {
     test('devuelve sólo la medición óptica, radar, clima y uso más recientes', async () => {
       const { agent, lot } = await prepararLote('state_user');
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, observedAt: '2026-08-10' });
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, observedAt: '2026-08-18', puntaje: 90 });
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionRadar, observedAt: '2026-08-11' });
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionRadar, observedAt: '2026-08-19' });
-      await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: '2026-08-10T12:00:00.000Z' });
-      await agent.post(`/api/lotes/${lot.id}/clima`).send({ ...clima('manual'), consultedAt: '2026-08-19T12:00:00.000Z' });
+      await insertarMedicion(lot.id, { ...medicionOptica, observedAt: '2026-08-10' });
+      await insertarMedicion(lot.id, { ...medicionOptica, observedAt: '2026-08-18', puntaje: 90 });
+      await insertarMedicion(lot.id, { ...medicionRadar, observedAt: '2026-08-11' });
+      await insertarMedicion(lot.id, { ...medicionRadar, observedAt: '2026-08-19' });
+      await insertarClima(lot.id, { ...clima('manual'), consultedAt: '2026-08-10T12:00:00.000Z' });
+      await insertarClima(lot.id, { ...clima('manual'), consultedAt: '2026-08-19T12:00:00.000Z' });
       await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2026-08-14' });
       await agent.post(`/api/lotes/${lot.id}/usos`).send({ fecha: '2026-08-19' });
       const response = await agent.get(`/api/lotes/${lot.id}/estado`);
@@ -671,6 +810,7 @@ integration('API backend de RODEO', () => {
       expect(response.body.satelite.radar.observedAt).toBe('2026-08-19');
       expect(response.body.satelite.radar).not.toHaveProperty('puntaje');
       expect(response.body.clima.consultedAt).toBe('2026-08-19T12:00:00.000Z');
+      expect(response.body.clima.origen).toBe('manual');
       expect(response.body.uso.ultimoUso).toEqual({ fecha: '2026-08-19', origen: 'manual' });
       expect(response.body.uso.diasDescanso).toBeGreaterThanOrEqual(0);
     });
@@ -689,10 +829,10 @@ integration('API backend de RODEO', () => {
       const lote1 = await crearLote(agent, 1, 2);
       const lote2 = await crearLote(agent, 3, 4);
       const lote3 = await crearLote(agent, 5, 6);
-      await agent.post(`/api/lotes/${lote1.id}/mediciones-satelitales`).send({ ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.2 } });
-      await agent.post(`/api/lotes/${lote1.id}/clima`).send(clima('manual'));
+      await insertarMedicion(lote1.id, { ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.2 } });
+      await insertarClima(lote1.id);
       await agent.post(`/api/lotes/${lote1.id}/usos`).send({ fecha: '2026-08-19' });
-      await agent.post(`/api/lotes/${lote2.id}/mediciones-satelitales`).send({ ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.8 } });
+      await insertarMedicion(lote2.id, { ...medicionOptica, ndvi: { ...medicionOptica.ndvi, mediana: 0.8 } });
       const response = await agent.get('/api/lotes/estado');
       expect(response.status).toBe(200);
       expect(response.body.lotes.map((item: { lote: { numero: number } }) => item.lote.numero)).toEqual([1, 2, 3]);
@@ -730,7 +870,7 @@ integration('API backend de RODEO', () => {
 
     test('mantiene consistencia conceptual entre estado individual y colección', async () => {
       const { agent, lot } = await prepararLote('bulk_consistency_user');
-      await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(medicionRadar);
+      await insertarMedicion(lot.id, medicionRadar);
       const individual = await agent.get(`/api/lotes/${lot.id}/estado`);
       const collection = await agent.get('/api/lotes/estado');
       const item = collection.body.lotes.find((estado: { lote: { id: string } }) => estado.lote.id === lot.id);

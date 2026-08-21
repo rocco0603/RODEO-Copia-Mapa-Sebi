@@ -35,6 +35,8 @@ Objetivo inmediato:
 
 Nunca inventar datos. Si Copernicus u Open-Meteo no devuelven información válida, guardar/mostrar ausencia de datos o error explícito; no fabricar números para completar UI.
 
+Las observaciones de Copernicus/Open-Meteo se generan y persisten desde el backend. El frontend sólo envía IDs/intención; no reintroducir endpoints que acepten valores externos calculados por el navegador como autoridad.
+
 Sentinel-1 y Sentinel-2 son fuentes físicamente distintas. No combinarlas como si fueran la misma medición ni dar un puntaje óptico falso a una observación de radar.
 
 ## Geometría
@@ -67,6 +69,10 @@ Una vez terminado el onboarding, borrar o desactivar todos los lotes NO vuelve a
   para respetar `VITE_API_BASE_URL` y `credentials: "include"`;
 - preservar validación de entorno, CORS explícito, cookies seguras, Helmet,
   límite de body, rate limit de auth, request IDs y cierre ordenado.
+- nunca ejecutar integraciones destructivas contra `DATABASE_URL`; requieren
+  `TEST_DATABASE_URL` distinta, sin fallback;
+- aplicar migraciones forward primero en test, ejecutar `db:verify` y recién
+  después considerar la base principal.
 
 ## Estilo del código
 

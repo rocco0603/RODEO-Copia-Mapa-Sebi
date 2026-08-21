@@ -1,6 +1,5 @@
 import { pedir } from "./client";
 import type { EstadisticaIndice } from "../copernicus/types";
-import type { ResultadoClimaLote } from "../clima/types";
 
 export interface MedicionSatelital {
   id: string;
@@ -28,6 +27,7 @@ export type EstadisticaIndiceNullable = Partial<EstadisticaIndice> & {
 export interface ConsultaClimaHistorial {
   id: string;
   consultedAt: string;
+  origen: "automatico" | "manual" | "legacy";
   lluviaUltimos7Dias: number | null;
   lluviaProximosDias: number | null;
   categoria: string | null;
@@ -88,6 +88,7 @@ export interface EstadoSateliteRadar extends EstadoSateliteBase {
 
 export interface EstadoClima {
   consultedAt: string;
+  origen: "automatico" | "manual" | "legacy";
   horasDesdeConsulta: number;
   lluviaUltimos7Dias: number | null;
   lluviaProximosDias: number | null;
@@ -106,22 +107,6 @@ export interface OpcionesHistorial {
   desde?: string;
   hasta?: string;
   fuente?: "sentinel-1" | "sentinel-2";
-}
-
-export type OrigenConsultaClima = "automatico" | "manual";
-
-export async function guardarConsultaClima(loteId: string, resultado: Extract<ResultadoClimaLote, { estado: "ok" }>, origen: OrigenConsultaClima): Promise<void> {
-  await pedir(`/api/lotes/${loteId}/clima`, {
-    method: "POST",
-    body: JSON.stringify({
-      origen,
-      consultedAt: resultado.clima.consultadoEn,
-      lluviaUltimos7Dias: resultado.clima.lluviaUltimos7Dias,
-      lluviaProximosDias: resultado.clima.lluviaProximosDias,
-      categoria: resultado.categoria,
-      dias: resultado.clima.dias,
-    }),
-  });
 }
 
 export async function obtenerHistorialLote(loteId: string): Promise<HistorialLote> {
