@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import type { Pool } from 'pg';
 import { establecimiento, lote, clima, medicionOptica, medicionRadar } from '../helpers/fixtures.js';
 import { migrateTestDatabase, resetTestDatabase } from '../helpers/db.js';
+import { openMeteo } from '../../src/services/open-meteo.js';
 
 const tieneBaseDeTest = Boolean(process.env.TEST_DATABASE_URL);
 const integration = tieneBaseDeTest ? describe : describe.skip;
@@ -145,6 +146,40 @@ integration('API backend de RODEO', () => {
         if (anteriorId === undefined) delete process.env.COPERNICUS_CLIENT_ID; else process.env.COPERNICUS_CLIENT_ID = anteriorId;
         if (anteriorSecret === undefined) delete process.env.COPERNICUS_CLIENT_SECRET; else process.env.COPERNICUS_CLIENT_SECRET = anteriorSecret;
       }
+    });
+  });
+
+  describe('gateway Open-Meteo', () => {
+    test('requiere sesiÃ³n y valida loteIds', async () => {
+      expect((await request(app).post('/api/clima/consultar').send({ loteIds: [] })).status).toBe(401);
+      const { agent } = await prepararLote('climate_gateway_invalid_user');
+      expect((await agent.post('/api/clima/consultar').send({ loteIds: 'no-array' })).body.error.code).toBe('INVALID_LOT_IDS');
+    });
+
+    test('consulta varios lotes con una llamada externa y conserva la asociaciÃ³n', async () => {
+      const agent = await registrar('climate_gateway_user');
+      await crearEstablecimiento(agent);
+      const first = await crearLote(agent, 1, 2);
+      const second = await crearLote(agent, 3, 4);
+      const anterior = openMeteo.reemplazarTransporte(async (url) => {
+        expect(new URL(url).searchParams.get('latitude')?.split(',')).toHaveLength(2);
+        return { ok: true, status: 200, json: async () => ({ daily: { time: Array.from({ length: 12 }, (_, i) => `2026-08-${String(10 + i).padStart(2, '0')}`), precipitation_sum: Array(12).fill(1), temperature_2m_max: Array(12).fill(20), temperature_2m_min: Array(12).fill(8) } }) };
+      });
+      try {
+        const response = await agent.post('/api/clima/consultar').send({ loteIds: [first.id, second.id] });
+        expect(response.status).toBe(200);
+        expect(Object.keys(response.body.resultados)).toEqual([first.id, second.id]);
+        expect(response.body.resultados[first.id].estado).toBe('ok');
+        expect(response.body.resultados[first.id].clima.hoy.fecha).toBe('2026-08-17');
+      } finally { openMeteo.reemplazarTransporte(anterior); }
+    });
+
+    test('rechaza lote ajeno y soft-deleted sin consultar Open-Meteo', async () => {
+      const owner = await prepararLote('climate_gateway_owner');
+      const other = await prepararLote('climate_gateway_other');
+      expect((await other.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
+      await owner.agent.delete(`/api/lotes/${owner.lot.id}`);
+      expect((await owner.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
     });
   });
 

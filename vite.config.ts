@@ -11,6 +11,7 @@ export default defineConfig(() => ({
         "/api/establecimiento": "http://localhost:3001",
         "/api/lotes": "http://localhost:3001",
         "/api/copernicus": "http://localhost:3001",
+        "/api/clima": "http://localhost:3001",
         "/api/health": "http://localhost:3001",
       },
     },

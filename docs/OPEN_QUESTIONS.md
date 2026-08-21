@@ -139,6 +139,11 @@ Implementada en `/lotes/:id`, con historial paginado y deep link. Siguen
 pendientes las notificaciones UI y mover las consultas de Copernicus/Open-Meteo
 al backend; esta ficha no introduce recomendaciones ni cambios de modelo.
 
+## Clima externo
+
+Open-Meteo ya estÃ¡ centralizado detrÃ¡s de Express. No requiere API key; la
+persistencia histÃ³rica sigue separada y no se fusiona con la consulta externa.
+
 ## Ganado y GPS
 
 ## Decisiones cerradas de la etapa actual

@@ -94,6 +94,13 @@ Muestra Sentinel-2 y Sentinel-1 por separado, evolución NDVI, clima, descanso,
 registro de uso e historial por pestañas. También permite actualizar satélite,
 actualizar clima y registrar un uso sin modificar el mapa ni el modelo de datos.
 
+## Gateway Open-Meteo actual
+
+El navegador ya no llama a `api.open-meteo.com`. `POST /api/clima/consultar`
+recibe IDs autenticados; Express valida pertenencia, obtiene los polÃ­gonos
+desde Neon, calcula centroides, realiza una Ãºnica consulta multi-coordenada y
+devuelve los `ResultadoClimaLote` ya interpretados.
+
 ## Backend actual
 
 El backend vive en `backend/` y usa Node.js, TypeScript, Express y PostgreSQL

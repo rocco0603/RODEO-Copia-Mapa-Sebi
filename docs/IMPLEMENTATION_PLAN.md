@@ -263,6 +263,15 @@ Cada fase debe:
 - evitar secretos en Git;
 - incluir una prueba manual mínima o test automatizado cuando corresponda.
 
+## MigraciÃ³n del gateway Open-Meteo al backend
+
+Implementada sin migraciÃ³n de base ni cambios de historial. El endpoint
+autenticado `POST /api/clima/consultar` recibe IDs, valida ownership y usa los
+polÃ­gonos almacenados para calcular centroides. Mantiene una sola llamada
+multi-coordenada, `past_days=7`, `forecast_days=5`, `timezone=auto`, las tres
+variables diarias y los umbrales existentes. El frontend conserva
+`consultarClimaLotes(lotes)` como fachada, pero ya no parsea la respuesta raw.
+
 ## Etapa de historial paginado y estado actual
 
 Implementada sobre las tablas existentes, sin migración nueva:

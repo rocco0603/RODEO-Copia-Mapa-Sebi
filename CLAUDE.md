@@ -81,6 +81,12 @@ El frontend dispone de la ficha `/lotes/:id`, con routing real, deep link y
 carga directa desde los endpoints de estado e historial. Mantener esta lógica
 fuera del mapa y no reintroducir `localStorage` como fuente de datos.
 
+## Clima externo
+
+Open-Meteo se consume mediante `POST /api/clima/consultar`. El frontend envÃ­a
+IDs de lotes, no geometrÃ­as; el backend valida ownership, calcula centroides
+y mantiene la consulta multi-lote.
+
 ## Seguridad
 
 La persistencia histórica debe guardar únicamente datos reales recibidos de

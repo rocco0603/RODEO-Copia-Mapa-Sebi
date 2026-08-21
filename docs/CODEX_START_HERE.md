@@ -16,6 +16,12 @@ El onboarding visual, la persistencia de establecimiento/lotes y la ficha
 completa `/lotes/:id` ya están implementados. Mantener el mapa y no reintroducir
 `localStorage` como fuente de verdad.
 
+## Estado de integraciones externas
+
+Copernicus y Open-Meteo se consumen mediante Express; Vite sÃ³lo proxifica sus
+endpoints. Open-Meteo no requiere API key y el frontend conserva fachadas
+compatibles para el mapa y la ficha.
+
 ## Primera tarea recomendada
 
 ## Estado vigente del repositorio

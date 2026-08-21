@@ -281,6 +281,15 @@ actualizaciones desde la ficha reutilizan los POST existentes y vuelven a
 cargar estado e historial; no agregan endpoints ni modifican el contrato del
 backend.
 
+## `POST /api/clima/consultar`
+
+Requiere autenticaciÃ³n y recibe `{ "loteIds": ["uuid", "uuid"] }`. Los IDs
+deben pertenecer al usuario y corresponder a lotes no eliminados; de lo
+contrario devuelve `LOT_NOT_FOUND` sin revelar datos ajenos. La respuesta es
+`{ "resultados": { "<loteId>": ResultadoClimaLote } }`. Express consulta
+Open-Meteo una sola vez por request multi-lote y devuelve el clima ya
+interpretado; la persistencia histÃ³rica sigue usando `POST /api/lotes/:id/clima`.
+
 ## Contratos actuales de historial
 
 Los endpoints `GET /api/lotes/:id/mediciones-satelitales`,
