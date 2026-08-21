@@ -7,7 +7,7 @@
  *
  *   npm run certs
  *
- * El plugin de Vite levanta solo cualquier .pem que encuentre en `certs/`.
+ * El backend de RODEO carga cualquier .pem que encuentre en `certs/`.
  */
 import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";

@@ -219,6 +219,16 @@ soft delete, numeración histórica y finalización irreversible del onboarding.
 
 ## Etapa de ficha completa de lote
 
+## MigraciÃ³n del gateway Copernicus al backend
+
+Implementada sin cambiar evalscripts, cÃ¡lculos, scoring, ventanas ni
+resoluciÃ³n. `backend/src/services/copernicus.ts` concentra OAuth, cache de
+token, reintento por 401, timeout y TLS; `backend/src/routes/copernicus.ts`
+expone los endpoints autenticados. Vite sÃ³lo hace proxy hacia Express.
+
+Las credenciales son opcionales para arrancar y viven exclusivamente en
+`backend/.env`.
+
 Implementada en frontend sin cambios de modelo ni de backend. React Router
 expone `/lotes/:id`, incluidos deep links y recarga directa; la página consume
 el estado consolidado y los historiales paginados existentes, separa Sentinel-2

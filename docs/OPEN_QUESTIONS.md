@@ -131,6 +131,10 @@ por ahora debido al límite conceptual actual de lotes por establecimiento.
 
 ## Ficha completa de lote
 
+La integraciÃ³n de Copernicus ya fue trasladada al backend Express. Queda como
+decisiÃ³n posterior mover tambiÃ©n el parsing/scoring y la persistencia fuera del
+frontend; esta etapa sÃ³lo mueve el gateway seguro.
+
 Implementada en `/lotes/:id`, con historial paginado y deep link. Siguen
 pendientes las notificaciones UI y mover las consultas de Copernicus/Open-Meteo
 al backend; esta ficha no introduce recomendaciones ni cambios de modelo.

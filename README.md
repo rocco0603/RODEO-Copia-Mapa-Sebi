@@ -74,6 +74,19 @@ Google OAuth, persistencia backend de Copernicus/Open-Meteo, notificaciones e hi
 
 ## Ficha completa de lote
 
+## Gateway Copernicus actual
+
+La integración de Copernicus ahora vive en el backend Express. El flujo es
+`frontend -> proxy Vite -> backend:3001 -> Copernicus`. Vite ya no ejecuta el
+cliente Copernicus ni necesita sus credenciales.
+
+Las variables `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET` son
+opcionales y viven en `backend/.env`. No se usan prefijos `VITE_`. Los
+endpoints autenticados son `GET /api/copernicus/estado` y
+`POST /api/copernicus/statistics`. Para usar Copernicus, copiá manualmente las
+dos variables reales desde tu configuración local a `backend/.env` y
+reiniciá backend y frontend. No edites ni compartas secretos.
+
 La ficha real está disponible en `/lotes/:id`, también mediante deep link y
 recarga directa. Se abre desde el mapa y los listados del sidebar, y consume
 `GET /api/lotes/:id/estado` junto con los historiales paginados existentes.
@@ -162,7 +175,7 @@ onboarding visual completo quedan para etapas posteriores.
 ## Arquitectura
 
 ```
-vite-plugin-copernicus.ts   proxy de Node para Sentinel Hub (Copernicus)
+  backend/src/services/copernicus.ts cliente servidor para Sentinel Hub
 .env.local                  credenciales opcionales de CDSE (gitignored)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 
@@ -209,7 +222,7 @@ código (los nombres ya lo dicen); los comentarios que hay explican el
   genuinamente más reciente que la óptica; nunca se mezcla en el mismo
   puntaje (ver "Principio rector").
 - Autenticación: OAuth client-credentials contra CDSE, con el secret
-  guardado del lado de Node (`vite-plugin-copernicus.ts`) — nunca llega al
+  guardado del lado del backend (`backend/src/services/copernicus.ts`) — nunca llega al
   navegador. El endpoint de token no manda CORS, por eso hace falta el
   proxy (a diferencia de Open-Meteo, que sí tiene CORS).
 - Cuenta gratuita, hace falta registrarse en https://dataspace.copernicus.eu.

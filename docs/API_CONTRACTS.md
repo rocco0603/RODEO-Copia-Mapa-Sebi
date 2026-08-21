@@ -268,6 +268,13 @@ Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existente
 
 ## Consumo desde la ficha del lote
 
+## Gateway Copernicus
+
+`GET /api/copernicus/estado` y `POST /api/copernicus/statistics` requieren
+sesiÃ³n autenticada. El primero devuelve `{ "configurado": boolean }`. El
+segundo reenvÃ­a el body JSON a la Statistical API y conserva respuestas como
+429. Sin credenciales devuelve 503 con `COPERNICUS_NOT_CONFIGURED`.
+
 La ruta frontend `/lotes/:id` carga el estado consolidado y, en paralelo, los
 tres listados paginados existentes con 20 elementos por pÃ¡gina. Las
 actualizaciones desde la ficha reutilizan los POST existentes y vuelven a

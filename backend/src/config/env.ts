@@ -21,4 +21,6 @@ export const env = {
   authJwtSecret,
   port: Number(process.env.PORT ?? 3001),
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  copernicusClientId: process.env.COPERNICUS_CLIENT_ID?.trim() ?? '',
+  copernicusClientSecret: process.env.COPERNICUS_CLIENT_SECRET?.trim() ?? '',
 };

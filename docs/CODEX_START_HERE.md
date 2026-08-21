@@ -8,6 +8,10 @@ El frontend actual funciona y no debe reescribirse. La tarea es agregar backend 
 
 ## Estado frontend actual
 
+El gateway de Copernicus ya vive en Express y Vite sÃ³lo lo proxifica. Las
+credenciales se configuran manualmente en `backend/.env`; el frontend no las
+lee.
+
 El onboarding visual, la persistencia de establecimiento/lotes y la ficha
 completa `/lotes/:id` ya están implementados. Mantener el mapa y no reintroducir
 `localStorage` como fuente de verdad.

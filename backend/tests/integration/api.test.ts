@@ -108,6 +108,46 @@ integration('API backend de RODEO', () => {
     });
   });
 
+  describe('gateway Copernicus', () => {
+    test('rechaza usuario sin sesiÃ³n', async () => {
+      expect((await request(app).get('/api/copernicus/estado')).status).toBe(401);
+      expect((await request(app).post('/api/copernicus/statistics').send({})).status).toBe(401);
+    });
+
+    test('estado refleja credenciales opcionales', async () => {
+      const anteriorId = process.env.COPERNICUS_CLIENT_ID;
+      const anteriorSecret = process.env.COPERNICUS_CLIENT_SECRET;
+      try {
+        const { agent } = await prepararLote('copernicus_state_user');
+        delete process.env.COPERNICUS_CLIENT_ID;
+        delete process.env.COPERNICUS_CLIENT_SECRET;
+        expect((await agent.get('/api/copernicus/estado')).body).toEqual({ configurado: false });
+        process.env.COPERNICUS_CLIENT_ID = 'id-de-prueba';
+        process.env.COPERNICUS_CLIENT_SECRET = 'secret-de-prueba';
+        expect((await agent.get('/api/copernicus/estado')).body).toEqual({ configurado: true });
+      } finally {
+        if (anteriorId === undefined) delete process.env.COPERNICUS_CLIENT_ID; else process.env.COPERNICUS_CLIENT_ID = anteriorId;
+        if (anteriorSecret === undefined) delete process.env.COPERNICUS_CLIENT_SECRET; else process.env.COPERNICUS_CLIENT_SECRET = anteriorSecret;
+      }
+    });
+
+    test('statistics devuelve 503 controlado sin credenciales', async () => {
+      const anteriorId = process.env.COPERNICUS_CLIENT_ID;
+      const anteriorSecret = process.env.COPERNICUS_CLIENT_SECRET;
+      try {
+        const { agent } = await prepararLote('copernicus_missing_user');
+        delete process.env.COPERNICUS_CLIENT_ID;
+        delete process.env.COPERNICUS_CLIENT_SECRET;
+        const response = await agent.post('/api/copernicus/statistics').send({ input: {} });
+        expect(response.status).toBe(503);
+        expect(response.body.error.code).toBe('COPERNICUS_NOT_CONFIGURED');
+      } finally {
+        if (anteriorId === undefined) delete process.env.COPERNICUS_CLIENT_ID; else process.env.COPERNICUS_CLIENT_ID = anteriorId;
+        if (anteriorSecret === undefined) delete process.env.COPERNICUS_CLIENT_SECRET; else process.env.COPERNICUS_CLIENT_SECRET = anteriorSecret;
+      }
+    });
+  });
+
   describe('establecimiento y onboarding', () => {
     test('crea, lee, renombra y rechaza un segundo establecimiento', async () => {
       const agent = await registrar('establecimiento_user');

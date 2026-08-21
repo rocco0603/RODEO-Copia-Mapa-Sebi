@@ -73,6 +73,10 @@ Cada observación satelital real y cada consulta de clima deben poder persistirs
 
 ## Ficha completa de lote
 
+Copernicus se consume mediante el backend Express. Las credenciales opcionales
+son `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET` en `backend/.env`; no
+deben existir como variables `VITE_` ni llegar al navegador.
+
 El frontend dispone de la ficha `/lotes/:id`, con routing real, deep link y
 carga directa desde los endpoints de estado e historial. Mantener esta lógica
 fuera del mapa y no reintroducir `localStorage` como fuente de datos.
