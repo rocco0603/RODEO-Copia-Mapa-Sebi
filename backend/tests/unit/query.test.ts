@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { leerPaginacion, leerRangoCalendario } from '../../src/http/query.js';
+import { leerBooleano, leerPaginacion, leerRangoCalendario } from '../../src/http/query.js';
 
 describe('query params de historial', () => {
   test('usa defaults y acepta rango válido', () => {
@@ -14,5 +14,13 @@ describe('query params de historial', () => {
     expect(() => leerPaginacion({ limit: 'abc' })).toThrow();
     expect(() => leerPaginacion({ offset: '-1' })).toThrow();
     expect(() => leerRangoCalendario({ desde: '2026-08-21', hasta: '2026-08-20' })).toThrow();
+  });
+
+  test('permite default específico y booleanos estrictos', () => {
+    expect(leerPaginacion({}, 20)).toEqual({ limit: 20, offset: 0 });
+    expect(leerBooleano({ soloNoLeidas: 'true' }, 'soloNoLeidas')).toBe(true);
+    expect(leerBooleano({ soloNoLeidas: 'false' }, 'soloNoLeidas')).toBe(false);
+    expect(leerBooleano({}, 'soloNoLeidas')).toBeUndefined();
+    expect(() => leerBooleano({ soloNoLeidas: '1' }, 'soloNoLeidas')).toThrow();
   });
 });

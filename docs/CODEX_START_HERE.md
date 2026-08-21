@@ -22,6 +22,12 @@ Copernicus y Open-Meteo se consumen mediante Express; Vite sÃ³lo proxifica sus
 endpoints. Open-Meteo no requiere API key y el frontend conserva fachadas
 compatibles para el mapa y la ficha.
 
+## Notificaciones
+
+La infraestructura base ya existe: API privada, panel en Sidebar, badge y
+marcado individual/masivo. No hay generaciÃ³n automÃ¡tica ni endpoint pÃºblico de
+creaciÃ³n; no inventar reglas de alertas.
+
 ## Primera tarea recomendada
 
 ## Estado vigente del repositorio

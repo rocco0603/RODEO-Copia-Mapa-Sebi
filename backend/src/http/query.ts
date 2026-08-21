@@ -37,8 +37,16 @@ function fecha(query: ParsedQs, nombre: 'desde' | 'hasta'): string | undefined {
   return value;
 }
 
-export function leerPaginacion(query: ParsedQs): Paginacion {
-  return { limit: entero(query, 'limit', 50, 1, 100), offset: entero(query, 'offset', 0, 0) };
+export function leerPaginacion(query: ParsedQs, limiteDefault = 50): Paginacion {
+  return { limit: entero(query, 'limit', limiteDefault, 1, 100), offset: entero(query, 'offset', 0, 0) };
+}
+
+export function leerBooleano(query: ParsedQs, nombre: string): boolean | undefined {
+  const value = texto(query, nombre);
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new ApiError(400, 'INVALID_BOOLEAN', `${nombre} debe ser true o false.`);
 }
 
 export function leerRangoCalendario(query: ParsedQs): RangoCalendario {

@@ -1,9 +1,11 @@
 import { type ReactNode, useEffect, useState } from "react";
 import type { Establecimiento, Lote } from "../types";
 import { areaHectareas } from "../geo";
+import { useNotificaciones } from "../hooks/useNotificaciones";
+import NotificationsPanel from "./NotificationsPanel";
 
 export type DrawMode = "idle" | "establecimiento" | "lote";
-type Tab = "establecimiento" | "lotes" | "clima" | "condicion";
+type Tab = "establecimiento" | "lotes" | "clima" | "condicion" | "notificaciones";
 
 interface SidebarProps {
   establecimiento: Establecimiento | null;
@@ -45,6 +47,7 @@ const TABS: { id: Tab; etiqueta: string }[] = [
   { id: "establecimiento", etiqueta: "Establecimiento" },
   { id: "lotes", etiqueta: "Lotes" },
   { id: "clima", etiqueta: "Clima" },
+  { id: "notificaciones", etiqueta: "Notificaciones" },
   { id: "condicion", etiqueta: "Condición" },
 ];
 
@@ -82,6 +85,7 @@ export default function Sidebar({
   panelCondicion,
 }: SidebarProps) {
   const [tab, setTab] = useState<Tab>("lotes");
+  const notificaciones = useNotificaciones(Boolean(establecimiento && !onboardingStep));
 
   useEffect(() => {
     if (selectedLoteId) setTab("lotes");
@@ -147,6 +151,9 @@ export default function Sidebar({
                 {t.etiqueta}
                 {t.id === "lotes" && lotesVisibles.length > 0 && (
                   <span className="sidebar-tab-badge">{lotesVisibles.length}</span>
+                )}
+                {t.id === "notificaciones" && notificaciones.noLeidas > 0 && (
+                  <span className="sidebar-tab-badge" aria-label={`${notificaciones.noLeidas} notificaciones sin leer`}>{notificaciones.noLeidas}</span>
                 )}
               </button>
             ))}
@@ -333,6 +340,7 @@ export default function Sidebar({
 
             {tab === "clima" && panelClima}
             {tab === "condicion" && panelCondicion}
+            {tab === "notificaciones" && <NotificationsPanel lotes={lotes} {...notificaciones} onRetry={notificaciones.recargar} onMarcarLeida={notificaciones.marcarLeida} onMarcarTodas={notificaciones.marcarTodas} onAnterior={notificaciones.anterior} onSiguiente={notificaciones.siguiente} />}
           </div>
         </>
       )}

@@ -42,6 +42,16 @@ async function prepararLote(username = `usuario_${Date.now()}_${Math.random()}`)
   return { agent, lot };
 }
 
+async function insertarNotificacion(username: string, titulo: string, createdAt: string, opciones: { readAt?: string | null; loteId?: string | null } = {}) {
+  const usuario = await pool.query<{ id: string }>('SELECT id FROM usuarios WHERE username = $1', [username]);
+  const result = await pool.query(
+    `INSERT INTO notificaciones (user_id, lote_id, tipo, titulo, mensaje, read_at, metadata, created_at)
+     VALUES ($1, $2, 'prueba', $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+    [usuario.rows[0].id, opciones.loteId ?? null, titulo, `Mensaje ${titulo}`, opciones.readAt ?? null, JSON.stringify({ prueba: true }), createdAt],
+  );
+  return result.rows[0];
+}
+
 integration('API backend de RODEO', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -180,6 +190,65 @@ integration('API backend de RODEO', () => {
       expect((await other.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
       await owner.agent.delete(`/api/lotes/${owner.lot.id}`);
       expect((await owner.agent.post('/api/clima/consultar').send({ loteIds: [owner.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
+    });
+  });
+
+  describe('notificaciones', () => {
+    test('requiere sesiÃ³n para listar y marcar', async () => {
+      expect((await request(app).get('/api/notificaciones')).status).toBe(401);
+      expect((await request(app).patch('/api/notificaciones/leidas')).status).toBe(401);
+    });
+
+    test('aÃ­sla usuarios, ordena, pagina, filtra y calcula noLeidas globales', async () => {
+      const owner = await registrar('notifications_owner');
+      await registrar('notifications_other');
+      await insertarNotificacion('notifications_owner', 'Primera', '2026-08-20T10:00:00.000Z');
+      await insertarNotificacion('notifications_owner', 'Segunda', '2026-08-20T11:00:00.000Z', { readAt: '2026-08-20T11:30:00.000Z' });
+      await insertarNotificacion('notifications_owner', 'Tercera', '2026-08-20T12:00:00.000Z');
+      await insertarNotificacion('notifications_other', 'Ajena', '2026-08-20T13:00:00.000Z');
+
+      const pagina = await owner.get('/api/notificaciones?limit=2&offset=0');
+      expect(pagina.status).toBe(200);
+      expect(pagina.body.notificaciones.map((item: { titulo: string }) => item.titulo)).toEqual(['Tercera', 'Segunda']);
+      expect(pagina.body.noLeidas).toBe(2);
+      expect(pagina.body.paginacion).toEqual({ limit: 2, offset: 0, total: 3, hayMas: true });
+      expect(JSON.stringify(pagina.body)).not.toContain('Ajena');
+
+      const noLeidas = await owner.get('/api/notificaciones?soloNoLeidas=true');
+      expect(noLeidas.body.notificaciones.map((item: { titulo: string }) => item.titulo)).toEqual(['Tercera', 'Primera']);
+      expect(noLeidas.body.paginacion.total).toBe(2);
+      expect((await owner.get('/api/notificaciones?limit=0')).status).toBe(400);
+      expect((await owner.get('/api/notificaciones?soloNoLeidas=si')).status).toBe(400);
+    });
+
+    test('marca una de forma idempotente y oculta notificaciones ajenas', async () => {
+      const owner = await registrar('notifications_mark_owner');
+      const other = await registrar('notifications_mark_other');
+      const item = await insertarNotificacion('notifications_mark_owner', 'Pendiente', '2026-08-20T12:00:00.000Z');
+      const primera = await owner.patch(`/api/notificaciones/${item.id}/leida`);
+      expect(primera.status).toBe(200);
+      expect(primera.body.notificacion.leida).toBe(true);
+      const readAt = primera.body.notificacion.readAt;
+      const segunda = await owner.patch(`/api/notificaciones/${item.id}/leida`);
+      expect(segunda.body.notificacion.readAt).toBe(readAt);
+      expect((await other.patch(`/api/notificaciones/${item.id}/leida`)).status).toBe(404);
+      expect((await owner.patch('/api/notificaciones/id-invalido/leida')).status).toBe(400);
+    });
+
+    test('marca todas sÃ³lo para el usuario y conserva read_at existente', async () => {
+      const owner = await registrar('notifications_all_owner');
+      await registrar('notifications_all_other');
+      const previa = '2026-08-19T09:00:00.000Z';
+      const leida = await insertarNotificacion('notifications_all_owner', 'Ya leÃ­da', '2026-08-19T08:00:00.000Z', { readAt: previa });
+      await insertarNotificacion('notifications_all_owner', 'Nueva 1', '2026-08-20T10:00:00.000Z');
+      await insertarNotificacion('notifications_all_owner', 'Nueva 2', '2026-08-20T11:00:00.000Z');
+      const ajena = await insertarNotificacion('notifications_all_other', 'Ajena pendiente', '2026-08-20T12:00:00.000Z');
+      const response = await owner.patch('/api/notificaciones/leidas');
+      expect(response.body).toEqual({ actualizadas: 2 });
+      const rows = await pool.query('SELECT id, read_at FROM notificaciones WHERE id = ANY($1::uuid[]) ORDER BY id', [[leida.id, ajena.id]]);
+      expect(new Date(rows.rows.find((row) => row.id === leida.id).read_at).toISOString()).toBe(previa);
+      expect(rows.rows.find((row) => row.id === ajena.id).read_at).toBeNull();
+      expect((await owner.get('/api/notificaciones')).body.noLeidas).toBe(0);
     });
   });
 

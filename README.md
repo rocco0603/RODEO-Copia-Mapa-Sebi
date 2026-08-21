@@ -65,7 +65,7 @@ backend/PostgreSQL de Neon. No se consulta `localStorage` para esos datos.
 ### EN IMPLEMENTACIÓN / SIGUIENTE ETAPA
 
 - persistencia backend de Copernicus/Open-Meteo;
-- historial y notificaciones en UI;
+- reglas automÃ¡ticas que generen notificaciones;
 - deploy y configuración final de CORS/cookies, manteniendo el mapa actual.
 
 ### PENDIENTE Y FUERA DE ALCANCE
@@ -100,6 +100,14 @@ El navegador ya no llama a `api.open-meteo.com`. `POST /api/clima/consultar`
 recibe IDs autenticados; Express valida pertenencia, obtiene los polÃ­gonos
 desde Neon, calcula centroides, realiza una Ãºnica consulta multi-coordenada y
 devuelve los `ResultadoClimaLote` ya interpretados.
+
+## Notificaciones base
+
+La API autenticada y el panel del Sidebar ya estÃ¡n implementados. Permiten
+listar con paginaciÃ³n, mostrar el total global sin leer, marcar una o todas y
+actualizar el badge sin recargar. No existe un endpoint pÃºblico de creaciÃ³n ni
+reglas automÃ¡ticas: un usuario real sin datos ve correctamente "No tenÃ©s
+notificaciones".
 
 ## Backend actual
 

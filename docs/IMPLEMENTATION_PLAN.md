@@ -197,6 +197,13 @@ Con la DB ya llena, recién entonces construir una vista Historial real que pued
 - evolución de consultas de clima;
 - eventualmente recomendaciones y uso real cuando existan.
 
+### Estado implementado de notificaciones
+
+La infraestructura de API y UI estÃ¡ completa sobre la tabla original, sin
+migraciones ni reglas automÃ¡ticas. El Sidebar carga 20 por pÃ¡gina, mantiene un
+badge global sin polling y permite marcar una o todas sin F5. Los tipos y las
+reglas que crearÃ¡n notificaciones siguen pendientes de producto.
+
 ## No hacer en estas fases
 
 - vacas;

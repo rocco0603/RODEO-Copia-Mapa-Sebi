@@ -7,6 +7,7 @@ import { historialRouter } from './routes/historial.js';
 import { ApiError, errorResponse } from './http/errors.js';
 import { copernicusRouter } from './routes/copernicus.js';
 import { climaRouter } from './routes/clima.js';
+import { notificacionesRouter } from './routes/notificaciones.js';
 
 export const app = express();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use('/api/health', healthRouter);
 app.use('/api/copernicus', copernicusRouter);
 app.use('/api/clima', climaRouter);
+app.use('/api/notificaciones', notificacionesRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/establecimiento', establecimientoRouter);
 app.use('/api/lotes', lotesRouter);

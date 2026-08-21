@@ -29,5 +29,8 @@ export async function pedir<T>(path: string, init?: RequestInit): Promise<T> {
     const error = body as ErrorResponse | null;
     throw new ApiError(response.status, error?.error?.message ?? "No se pudo completar la operación.", error?.error?.code);
   }
+  if (body === null) {
+    throw new ApiError(response.status, "El servidor devolvió una respuesta inválida.", "INVALID_RESPONSE");
+  }
   return body as T;
 }

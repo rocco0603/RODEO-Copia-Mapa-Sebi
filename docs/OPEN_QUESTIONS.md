@@ -55,6 +55,13 @@ Los pesos actuales de NDVI/NDMI/EVI y umbrales de lluvia siguen siendo puntos de
 
 No presentar el puntaje actual como “IA” ni como probabilidad.
 
+### Estado implementado de notificaciones
+
+Ya existen API privada, paginaciÃ³n, conteo global de no leÃ­das, marcado
+individual/masivo y panel base en Sidebar. No hay generaciÃ³n automÃ¡tica ni
+endpoint pÃºblico de creaciÃ³n. Siguen abiertos los tipos finales,
+deduplicaciÃ³n y reglas de producto.
+
 ## Historial
 
 Decidido:

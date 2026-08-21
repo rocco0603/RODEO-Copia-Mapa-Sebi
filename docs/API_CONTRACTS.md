@@ -215,6 +215,18 @@ Opcional: marcar todas como leídas.
 
 Los tipos exactos de notificación siguen abiertos.
 
+### Contrato implementado de notificaciones
+
+`GET /api/notificaciones` ordena por `created_at DESC, id DESC`, acepta
+`limit` (default 20, mÃ¡ximo 100), `offset` y
+`soloNoLeidas=true|false`. Devuelve la colecciÃ³n, `noLeidas` global y
+`paginacion` con `total` y `hayMas`.
+
+`PATCH /api/notificaciones/:id/leida` es idempotente y devuelve el DTO
+actualizado. `PATCH /api/notificaciones/leidas` devuelve
+`{ "actualizadas": N }` y conserva los timestamps previos. Todos los endpoints
+usan el usuario de sesiÃ³n; no existe endpoint HTTP de creaciÃ³n.
+
 ## Respuesta de errores
 
 Formato recomendado:

@@ -87,6 +87,12 @@ Open-Meteo se consume mediante `POST /api/clima/consultar`. El frontend envÃ­a
 IDs de lotes, no geometrÃ­as; el backend valida ownership, calcula centroides
 y mantiene la consulta multi-lote.
 
+## Notificaciones base
+
+La API y el panel de notificaciones estÃ¡n implementados sobre la tabla
+existente, con aislamiento por sesiÃ³n, paginaciÃ³n y leÃ­do/no leÃ­do. No crear
+reglas automÃ¡ticas ni tipos agronÃ³micos hasta que producto los defina.
+
 ## Seguridad
 
 La persistencia histórica debe guardar únicamente datos reales recibidos de
