@@ -36,11 +36,11 @@ npm run certs        # sólo en Windows con red corporativa (ver abajo)
 npm run dev
 ```
 
-Copernicus es opcional para levantar el frontend. Si querés usar el análisis
-satelital, creá `.env.local` en la raíz a partir de `.env.example` y completá
+Copernicus es opcional para levantar RODEO. Si querés usar el análisis
+satelital, creá `backend/.env` a partir de `backend/.env.example` y completá
 `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET` con credenciales de
 https://dataspace.copernicus.eu. No uses prefijo `VITE_`: esas variables las
-lee únicamente el proceso Node de Vite.
+lee únicamente el backend Express.
 
 El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 
@@ -55,7 +55,10 @@ El clima (Open-Meteo) no necesita ninguna credencial ni configuración.
 - APIs privadas de establecimiento y lotes, validaciones geométricas, lotes contenidos, no solapamiento, soft delete, numeración histórica no reutilizable y `onboarding_completed_at` irreversible.
 - Frontend conectado a autenticación real: loading inicial, login, registro, usuario visible, logout y separación `App`/`RodeoApp` para conservar el orden de hooks del mapa.
 - Proxy Vite para el backend.
-- Copernicus es opcional para levantar Vite. Sus credenciales se leen únicamente en Node/Vite desde `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`; sin ellas, estado responde `configurado:false` y las estadísticas responden indisponibilidad controlada. No se usa prefijo `VITE_`.
+- Configuración de producción validada al arrancar, CORS explícito, cookies configurables, Helmet, límite de body, rate limit de auth, request IDs y logs estructurados.
+- Health checks separados (`/api/health/live` y `/api/health/ready`), cierre ordenado del servidor y CI de frontend/backend en GitHub Actions.
+- Copernicus es opcional para levantar RODEO. Sus credenciales se leen únicamente en Express desde `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET`; sin ellas, estado responde `configurado:false` y una actualización devuelve indisponibilidad controlada. No se usa prefijo `VITE_`.
+- El backend es dueño de la actualización satelital completa: obtiene lote/polígono desde PostgreSQL, construye las consultas S2/S1, interpreta, calcula el scoring provisional y persiste. El frontend sólo envía IDs y consume `ResultadoLote`.
 
 ### ESTADO TEMPORAL IMPORTANTE
 
@@ -64,26 +67,29 @@ backend/PostgreSQL de Neon. No se consulta `localStorage` para esos datos.
 
 ### EN IMPLEMENTACIÓN / SIGUIENTE ETAPA
 
-- persistencia backend de Copernicus/Open-Meteo;
+- persistencia completa server-side de Open-Meteo;
 - reglas automÃ¡ticas que generen notificaciones;
-- deploy y configuración final de CORS/cookies, manteniendo el mapa actual.
+- elegir proveedor, dominios y valores finales de CORS/cookies para el despliegue real, manteniendo el mapa actual.
 
 ### PENDIENTE Y FUERA DE ALCANCE
 
-Google OAuth, persistencia backend de Copernicus/Open-Meteo, notificaciones e historial en UI, deploy, CORS/cookies finales según deployment y Vercel (posible a futuro, no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
+Google OAuth, persistencia completa server-side de Open-Meteo, reglas automáticas de notificaciones y deploy (proveedor aún no decidido). Ganado, GPS, jornadas, recomendaciones y ML siguen fuera de alcance.
 
 ## Ficha completa de lote
 
-## Gateway Copernicus actual
+## Actualización Copernicus actual
 
-La integración de Copernicus ahora vive en el backend Express. El flujo es
-`frontend -> proxy Vite -> backend:3001 -> Copernicus`. Vite ya no ejecuta el
-cliente Copernicus ni necesita sus credenciales.
+La integración completa de Copernicus vive en el backend Express. El flujo es
+`frontend (IDs) -> proxy Vite -> backend:3001 -> PostgreSQL/Copernicus -> persistencia`.
+Vite no ejecuta el cliente, evalscripts, parsing ni scoring satelital.
 
 Las variables `COPERNICUS_CLIENT_ID` y `COPERNICUS_CLIENT_SECRET` son
 opcionales y viven en `backend/.env`. No se usan prefijos `VITE_`. Los
-endpoints autenticados son `GET /api/copernicus/estado` y
-`POST /api/copernicus/statistics`. Para usar Copernicus, copiá manualmente las
+endpoints autenticados son `GET /api/copernicus/estado`,
+`POST /api/lotes/:id/satelite/actualizar` y
+`POST /api/lotes/satelite/actualizar`. El antiguo endpoint raw
+`POST /api/copernicus/statistics` fue retirado para impedir bodies arbitrarios
+desde el navegador. Para usar Copernicus, copiá manualmente las
 dos variables reales desde tu configuración local a `backend/.env` y
 reiniciá backend y frontend. No edites ni compartas secretos.
 
@@ -131,6 +137,24 @@ npm run typecheck
 npm run build
 ```
 
+### Configuración local y de producción
+
+El frontend usa rutas `/api` relativas por defecto, por lo que el proxy de Vite
+continúa funcionando en desarrollo. Si frontend y backend se despliegan en
+orígenes distintos, `VITE_API_BASE_URL` define la URL pública del backend al
+construir el frontend. No contiene secretos.
+
+El backend valida al arrancar `NODE_ENV`, `PORT`, `DATABASE_URL`,
+`AUTH_JWT_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` y `COOKIE_SAME_SITE`.
+Copernicus sigue siendo opcional. Las plantillas completas están en
+`.env.example` y `backend/.env.example`; la guía independiente de proveedor
+está en [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+Además de `/api/health`, existen `/api/health/live` (sin DB) y
+`/api/health/ready` (con DB). Las respuestas incluyen `X-Request-Id`; el
+backend aplica headers de seguridad, limita JSON a 1 MB y protege login y
+registro con un rate limit conservador en memoria.
+
 La migración inicial crea las siete tablas de dominio y sus índices básicos.
 La autenticación y la conexión del frontend ya están implementadas. La
 migración del establecimiento y los lotes desde `localStorage` hacia estas
@@ -143,7 +167,7 @@ APIs queda como siguiente etapa.
 | `node_modules/` | `npm install` |
 | `certs/` | `npm run certs` |
 | `dist/`, `.tsbuild/` | `npm run build` |
-| `.env.local` | credenciales opcionales de Copernicus (nunca se commitea, ver `.gitignore`) |
+| `.env.local` | configuración pública opcional del frontend, por ejemplo `VITE_API_BASE_URL` (nunca secretos) |
 
 ## Sobre `npm run certs`
 
@@ -158,7 +182,7 @@ En una red sin inspección TLS no hace falta.
 ## Principio rector: nunca inventar un dato
 
 Esta es la regla de diseño más importante y aparece en varios lugares del
-código (`api.ts`, `evalscript.ts`, `scoring.ts`): si no hay un dato real
+código (`backend/src/copernicus/analizar.ts`, `evalscript.ts`, `scoring.ts`): si no hay un dato real
 disponible, se muestra "sin datos" — nunca un número fabricado para rellenar
 un hueco visual. Ejemplos concretos:
 
@@ -167,7 +191,7 @@ un hueco visual. Ejemplos concretos:
 - El radar (Sentinel-1) nunca se combina/promedia con la óptica: son físicas
   distintas (reflectancia vs. backscatter) sin calibración cruzada real, así
   que se muestran por separado y rotulados.
-- Los rangos de puntaje (`RANGOS` en `scoring.ts`) y las categorías de lluvia
+- Los rangos de puntaje (`RANGOS` en `backend/src/copernicus/scoring.ts`) y las categorías de lluvia
   (`interpretacion.ts`) están marcados explícitamente como puntos de partida
   razonables, **no calibraciones agronómicas**. Si en algún momento hay datos
   reales para calibrar contra (cortes de forraje, registros de campo), hay
@@ -182,16 +206,17 @@ Una sesión válida con onboarding completo ve la aplicación actual; una sesió
 pendiente ve la pantalla temporal de configuración inicial; sin sesión se ve
 login/registro. Las cookies se envían con `credentials: "include"`.
 
-En desarrollo Vite proxye únicamente `/api/auth`, `/api/establecimiento`,
-`/api/lotes` y `/api/health` hacia `localhost:3001`. `/api/copernicus` sigue
-siendo atendido exclusivamente por su plugin actual. Google OAuth y el
+En desarrollo Vite proxye las rutas `/api` configuradas hacia `localhost:3001`,
+incluidas `/api/lotes` y `/api/copernicus`. Google OAuth y el
 onboarding visual completo quedan para etapas posteriores.
 
 ## Arquitectura
 
 ```
-  backend/src/services/copernicus.ts cliente servidor para Sentinel Hub
-.env.local                  credenciales opcionales de CDSE (gitignored)
+backend/src/services/copernicus.ts OAuth, TLS y transporte de Sentinel Hub
+backend/src/copernicus/            requests, evalscripts, parsing y scoring provisional
+backend/src/routes/satelite.ts     actualización individual y batch
+backend/.env                       credenciales opcionales de CDSE (gitignored)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 
 src/
@@ -206,13 +231,12 @@ src/
     PromptModal.tsx, ConfirmModal.tsx
 
   copernicus/
-    api.ts        consulta óptica (S2) + radar (S1) en paralelo, por lote
-    evalscript.ts EVALSCRIPT_INDICES (NDVI/NDMI/EVI/NDWI) y EVALSCRIPT_RADAR (RVI4S1)
-    scoring.ts     puntaje 0–100, categorías, alertas — NO calibrado agronómicamente
-    types.ts
+    api.ts          fachada HTTP que envía únicamente IDs
+    presentacion.ts etiquetas y colores de UI, sin cálculo agronómico
+    types.ts         DTOs de respuesta
 
   clima/
-    api.ts             consulta Open-Meteo, un request para todos los lotes activos
+    api.ts             fachada del backend para consultar clima por lote
     interpretacion.ts  categoriza la lluvia en una palabra — NO calibrado agronómicamente
     types.ts
 ```
@@ -244,11 +268,10 @@ código (los nombres ya lo dicen); los comentarios que hay explican el
 
 ### Open-Meteo (clima)
 
-Elegido sobre OpenWeatherMap después de comparar ambos: sin API key, sin
-cuenta, `access-control-allow-origin: *` confirmado en vivo (por eso el
-front lo llama directo desde el navegador, sin pasar por el proxy de Node,
-a diferencia de Copernicus). Mezcla de modelos regionales de alta
-resolución (`best_match`).
+Elegido sobre OpenWeatherMap después de comparar ambos: no requiere API key ni
+cuenta y mezcla modelos regionales de alta resolución (`best_match`). El
+navegador ya no llama al proveedor directamente: Express valida los IDs y
+polígonos del usuario y realiza la consulta multi-coordenada.
 
 Se pide **una sola petición HTTP para todos los lotes activos**: Open-Meteo
 acepta listas de lat/lng separadas por coma y devuelve un arreglo en el
@@ -281,9 +304,9 @@ olvidados:
 2. **Historial de ocupación / rotación de pastoreo** — depende del punto 1.
    Más adelante se evalúa un modelo de ML para sugerir cuánto descansar cada
    lote (ver por qué el ML está pausado arriba).
-3. **Persistencia real / multi-dispositivo** — establecimiento y lotes ya viven
-   en PostgreSQL/Neon y se cargan por API autenticada. La persistencia histórica
-   de satélite y clima todavía queda para etapas posteriores.
+3. **Persistencia real / multi-dispositivo** — establecimiento, lotes e historial
+   satelital ya viven en PostgreSQL/Neon y se cargan por API autenticada. La
+   persistencia completa server-side de clima queda para una etapa posterior.
 4. **Alertas / análisis programado** — considerado irrelevante hasta que
    exista la persistencia y autenticación del backend; la automatización de
    chequeos periódicos queda para una etapa posterior.

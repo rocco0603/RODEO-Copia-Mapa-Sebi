@@ -4,9 +4,9 @@ import {
   COLOR_CATEGORIA,
   COLOR_RADAR,
   COLOR_SIN_DATOS,
+  DIAS_VENTANA_VISIBLE,
   ETIQUETA_CATEGORIA,
-} from "../copernicus/scoring";
-import { DIAS_VENTANA } from "../copernicus/api";
+} from "../copernicus/presentacion";
 import TendenciaChart from "./TendenciaChart";
 
 interface CondicionPanelProps {
@@ -160,8 +160,8 @@ export default function CondicionPanel({
 
       {credencialesOk === false && (
         <p className="condicion-aviso">
-          Faltan las credenciales de Copernicus. Completá{" "}
-          <code>copernicus.credentials.ts</code> y reiniciá el dev-server.
+          Copernicus no está configurado. Agregá las variables del servicio en{" "}
+          <code>backend/.env</code> y reiniciá el backend.
         </p>
       )}
 
@@ -171,7 +171,7 @@ export default function CondicionPanel({
         </p>
       ) : (
         <p className="muted small">
-          Sentinel-2 L2A · última pasada despejada de los últimos {DIAS_VENTANA} días · con
+          Sentinel-2 L2A · última pasada despejada de los últimos {DIAS_VENTANA_VISIBLE} días · con
           respaldo Sentinel-1 (radar) si no hay óptica reciente ·{" "}
           {lotesActivos.length} lote{lotesActivos.length > 1 ? "s" : ""} activo
           {lotesActivos.length > 1 ? "s" : ""}.

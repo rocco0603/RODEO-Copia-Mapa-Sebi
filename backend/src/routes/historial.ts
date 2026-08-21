@@ -6,6 +6,7 @@ import { ApiError } from '../http/errors.js';
 import { esFechaCalendario } from '../date.js';
 import { leerPaginacion, leerRangoCalendario, type Paginacion, type RangoCalendario } from '../http/query.js';
 import { obtenerEstadosDeLotes } from '../services/estado-lotes.js';
+import { guardarMedicionSatelital } from '../services/mediciones-satelitales.js';
 
 export const historialRouter = Router();
 historialRouter.use(requiereAutenticacion);
@@ -64,16 +65,16 @@ function jsonb(value: unknown, campo: string): string | null {
     if (serialized === undefined) throw new Error('undefined JSON');
     return serialized;
   } catch {
-    throw new ApiError(400, 'INVALID_JSON', `${campo} debe ser un valor JSON vÃ¡lido.`);
+    throw new ApiError(400, 'INVALID_JSON', `${campo} debe ser un valor JSON válido.`);
   }
 }
 
-function alertas(value: unknown): string | null {
+function alertasValidas(value: unknown): string[] | null {
   if (value === undefined || value === null) return null;
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new ApiError(400, 'INVALID_ALERTS', 'alertas debe ser un arreglo de textos.');
   }
-  return jsonb(value, 'alertas');
+  return value;
 }
 
 function measurementDto(row: Record<string, unknown>) {
@@ -100,24 +101,16 @@ historialRouter.post('/:id/mediciones-satelitales', asyncHandler(async (req, res
   const puntaje = body.puntaje === undefined || body.puntaje === null ? null : nullableNumber(body.puntaje, 'puntaje');
   if (puntaje !== null && !Number.isInteger(puntaje)) throw new ApiError(400, 'INVALID_SCORE', 'puntaje debe ser entero.');
   const categoria = body.categoria === undefined || body.categoria === null ? null : typeof body.categoria === 'string' ? body.categoria : (() => { throw new ApiError(400, 'INVALID_CATEGORY', 'categoria debe ser texto.'); })();
-  const values = [loteId, body.fuente, observedAt, consultedAt, nullableNumber(body.coberturaValida, 'coberturaValida'), ndvi.media, ndvi.mediana, ndvi.min, ndvi.max, ndvi.desvio, ndmi.media, ndmi.mediana, ndmi.min, ndmi.max, ndmi.desvio, ndwi.media, ndwi.mediana, ndwi.min, ndwi.max, ndwi.desvio, evi.media, evi.mediana, evi.min, evi.max, evi.desvio, rvi.media, rvi.mediana, rvi.min, rvi.max, rvi.desvio, puntaje, categoria, alertas(body.alertas), jsonb(body.rawMetadata, 'rawMetadata')];
-  const result = await pool.query(
-    `INSERT INTO mediciones_satelitales (lote_id, fuente, observed_at, consulted_at, cobertura_valida,
-      ndvi_media, ndvi_mediana, ndvi_min, ndvi_max, ndvi_desvio, ndmi_media, ndmi_mediana, ndmi_min, ndmi_max, ndmi_desvio,
-      ndwi_media, ndwi_mediana, ndwi_min, ndwi_max, ndwi_desvio, evi_media, evi_mediana, evi_min, evi_max, evi_desvio,
-      rvi_media, rvi_mediana, rvi_min, rvi_max, rvi_desvio, puntaje, categoria, alertas, raw_metadata)
-     VALUES (${values.map((_, i) => `$${i + 1}`).join(', ')})
-     ON CONFLICT (lote_id, fuente, observed_at) DO UPDATE SET
-      consulted_at = EXCLUDED.consulted_at, cobertura_valida = EXCLUDED.cobertura_valida,
-      ndvi_media = EXCLUDED.ndvi_media, ndvi_mediana = EXCLUDED.ndvi_mediana, ndvi_min = EXCLUDED.ndvi_min, ndvi_max = EXCLUDED.ndvi_max, ndvi_desvio = EXCLUDED.ndvi_desvio,
-      ndmi_media = EXCLUDED.ndmi_media, ndmi_mediana = EXCLUDED.ndmi_mediana, ndmi_min = EXCLUDED.ndmi_min, ndmi_max = EXCLUDED.ndmi_max, ndmi_desvio = EXCLUDED.ndmi_desvio,
-      ndwi_media = EXCLUDED.ndwi_media, ndwi_mediana = EXCLUDED.ndwi_mediana, ndwi_min = EXCLUDED.ndwi_min, ndwi_max = EXCLUDED.ndwi_max, ndwi_desvio = EXCLUDED.ndwi_desvio,
-      evi_media = EXCLUDED.evi_media, evi_mediana = EXCLUDED.evi_mediana, evi_min = EXCLUDED.evi_min, evi_max = EXCLUDED.evi_max, evi_desvio = EXCLUDED.evi_desvio,
-      rvi_media = EXCLUDED.rvi_media, rvi_mediana = EXCLUDED.rvi_mediana, rvi_min = EXCLUDED.rvi_min, rvi_max = EXCLUDED.rvi_max, rvi_desvio = EXCLUDED.rvi_desvio,
-      puntaje = EXCLUDED.puntaje, categoria = EXCLUDED.categoria, alertas = EXCLUDED.alertas, raw_metadata = EXCLUDED.raw_metadata
-     RETURNING *`, values,
-  );
-  res.status(201).json({ medicion: measurementDto(result.rows[0]) });
+  const row = await guardarMedicionSatelital(pool, loteId, {
+    fuente: body.fuente,
+    observedAt,
+    consultedAt,
+    coberturaValida: nullableNumber(body.coberturaValida, 'coberturaValida'),
+    ndvi, ndmi, ndwi, evi, rvi, puntaje, categoria,
+    alertas: alertasValidas(body.alertas),
+    rawMetadata: body.rawMetadata === undefined ? undefined : JSON.parse(jsonb(body.rawMetadata, 'rawMetadata') ?? 'null') as unknown,
+  });
+  res.status(201).json({ medicion: measurementDto(row) });
 }));
 
 historialRouter.get('/:id/mediciones-satelitales', asyncHandler(async (req, res) => {

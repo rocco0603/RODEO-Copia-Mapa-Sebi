@@ -62,31 +62,3 @@ export type ResultadoLote =
     }
   | { estado: "sin-datos"; loteId: string; mensaje: string }
   | { estado: "error"; loteId: string; mensaje: string };
-
-/** Forma (parcial) de la respuesta de la Statistical API de Sentinel Hub. */
-export interface RespuestaEstadisticas {
-  data?: IntervaloEstadisticas[];
-  status?: string;
-  error?: string | { message?: string };
-}
-
-export interface IntervaloEstadisticas {
-  interval: { from: string; to: string };
-  outputs?: Record<string, { bands: Record<string, { stats: StatsCrudas }> }>;
-  error?: unknown;
-}
-
-/**
- * Ojo: cuando la máscara de nubes tapó todos los píxeles, Sentinel Hub manda
- * el string `"NaN"` (no un número) en min/max/mean/stDev y en los percentiles.
- * Por eso los tipamos como `number | string` y los pasamos por `aNumero()`.
- */
-export interface StatsCrudas {
-  min: number | string;
-  max: number | string;
-  mean: number | string;
-  stDev: number | string;
-  sampleCount: number;
-  noDataCount: number;
-  percentiles?: Record<string, number | string>;
-}

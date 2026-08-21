@@ -4,7 +4,14 @@ Este archivo no reemplaza `AGENTS.md`: primero leer `AGENTS.md` y toda la docume
 
 ## Contexto
 
-El frontend actual funciona y no debe reescribirse. La tarea es agregar backend y persistencia real de manera incremental.
+Frontend y backend reales ya funcionan y no deben reescribirse. La tarea es
+evolucionarlos incrementalmente conservando mapa, contratos y datos.
+
+La base de producción ya incluye configuración validada, CORS/cookies
+configurables, Helmet, límite de body, rate limit de auth, request IDs, logs,
+health checks y graceful shutdown. El frontend usa `src/api/client.ts` como
+punto único y admite `VITE_API_BASE_URL`. Ver `docs/DEPLOYMENT.md` antes de
+cambiar infraestructura.
 
 ## Estado frontend actual
 
@@ -27,6 +34,14 @@ compatibles para el mapa y la ficha.
 La infraestructura base ya existe: API privada, panel en Sidebar, badge y
 marcado individual/masivo. No hay generaciÃ³n automÃ¡tica ni endpoint pÃºblico de
 creaciÃ³n; no inventar reglas de alertas.
+
+## Estado satelital vigente
+
+La actualización Copernicus completa vive en backend: lote/polígono, request,
+evalscripts, interpretación, scoring provisional y persistencia. El frontend
+usa los endpoints individual y batch enviando sólo IDs. No reintroducir bodies
+Statistical API, geometrías, evalscripts ni persistencia satelital en el
+navegador; `/api/copernicus/statistics` ya no se expone.
 
 ## Primera tarea recomendada
 

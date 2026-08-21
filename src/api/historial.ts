@@ -1,5 +1,5 @@
 import { pedir } from "./client";
-import type { EstadisticaIndice, ResultadoLote } from "../copernicus/types";
+import type { EstadisticaIndice } from "../copernicus/types";
 import type { ResultadoClimaLote } from "../clima/types";
 
 export interface MedicionSatelital {
@@ -108,26 +108,7 @@ export interface OpcionesHistorial {
   fuente?: "sentinel-1" | "sentinel-2";
 }
 
-export interface MedicionSatelitalPayload {
-  fuente: "sentinel-1" | "sentinel-2";
-  observedAt: string;
-  consultedAt: number;
-  coberturaValida?: number;
-  ndvi?: EstadisticaIndice;
-  ndmi?: EstadisticaIndice;
-  ndwi?: EstadisticaIndice;
-  evi?: EstadisticaIndice;
-  rvi?: EstadisticaIndice;
-  puntaje?: number;
-  categoria?: string;
-  alertas?: string[];
-}
-
 export type OrigenConsultaClima = "automatico" | "manual";
-
-export async function guardarMedicionSatelital(loteId: string, payload: MedicionSatelitalPayload): Promise<void> {
-  await pedir(`/api/lotes/${loteId}/mediciones-satelitales`, { method: "POST", body: JSON.stringify(payload) });
-}
 
 export async function guardarConsultaClima(loteId: string, resultado: Extract<ResultadoClimaLote, { estado: "ok" }>, origen: OrigenConsultaClima): Promise<void> {
   await pedir(`/api/lotes/${loteId}/clima`, {
@@ -177,13 +158,4 @@ export async function registrarUsoLote(loteId: string, fecha: string): Promise<U
   return (await pedir<{ uso: UsoLote }>(`/api/lotes/${loteId}/usos`, {
     method: "POST", body: JSON.stringify({ fecha, origen: "manual" }),
   })).uso;
-}
-
-export function medicionDesdeResultado(resultado: Extract<ResultadoLote, { estado: "ok" } | { estado: "radar" }>, consultadoEn: number): MedicionSatelitalPayload[] {
-  if (resultado.estado === "ok") {
-    return [{ fuente: "sentinel-2", observedAt: resultado.condicion.fecha, consultedAt: consultadoEn, coberturaValida: resultado.condicion.coberturaValida, ndvi: resultado.condicion.ndvi, ndmi: resultado.condicion.ndmi, ndwi: resultado.condicion.ndwi, evi: resultado.condicion.evi, puntaje: resultado.condicion.puntaje, categoria: resultado.condicion.categoria, alertas: resultado.condicion.alertas }];
-  }
-  const mediciones: MedicionSatelitalPayload[] = [{ fuente: "sentinel-1", observedAt: resultado.condicion.fecha, consultedAt: consultadoEn, rvi: resultado.condicion.rvi }];
-  if (resultado.optico) mediciones.push({ fuente: "sentinel-2", observedAt: resultado.optico.fecha, consultedAt: consultadoEn, coberturaValida: resultado.optico.coberturaValida, ndvi: resultado.optico.ndvi, ndmi: resultado.optico.ndmi, ndwi: resultado.optico.ndwi, evi: resultado.optico.evi, puntaje: resultado.optico.puntaje, categoria: resultado.optico.categoria, alertas: resultado.optico.alertas });
-  return mediciones;
 }

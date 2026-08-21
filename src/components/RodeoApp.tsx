@@ -7,8 +7,8 @@ import CondicionPanel from "./CondicionPanel";
 import PromptModal from "./PromptModal";
 import ConfirmModal from "./ConfirmModal";
 import { isFullyContained, polygonsOverlap } from "../geo";
-import { analizarLotes, credencialesListas } from "../copernicus/api";
-import { COLOR_CATEGORIA, COLOR_RADAR, COLOR_SIN_DATOS, ETIQUETA_CATEGORIA } from "../copernicus/scoring";
+import { actualizarSateliteLotes, credencialesListas } from "../copernicus/api";
+import { COLOR_CATEGORIA, COLOR_RADAR, COLOR_SIN_DATOS, ETIQUETA_CATEGORIA } from "../copernicus/presentacion";
 import type { ResultadoLote } from "../copernicus/types";
 import { consultarClimaLotes } from "../clima/api";
 import type { ResultadoClimaLote } from "../clima/types";
@@ -17,7 +17,7 @@ import type { Establecimiento, Lote, PolygonFeature } from "../types";
 import { getCurrentUser, type UsuarioAutenticado } from "../api/auth";
 import { ApiError } from "../api/client";
 import { actualizarEstablecimiento, actualizarLote, crearEstablecimiento, crearLote, eliminarLote, obtenerEstablecimiento, obtenerLotes } from "../api/rodeo";
-import { guardarConsultaClima, guardarMedicionSatelital, medicionDesdeResultado, type OrigenConsultaClima } from "../api/historial";
+import { guardarConsultaClima, type OrigenConsultaClima } from "../api/historial";
 
 type Modal =
   | { type: "nombre-establecimiento"; polygon: PolygonFeature }
@@ -108,14 +108,6 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
     () => lotes.filter((lote) => lote.activo || showInactivos),
     [lotes, showInactivos],
   );
-
-  async function persistirResultadosSatelitales(respuestas: ResultadoLote[], consultadoEn: number) {
-    const operaciones = respuestas
-      .filter((respuesta): respuesta is Extract<ResultadoLote, { estado: "ok" } | { estado: "radar" }> => respuesta.estado === "ok" || respuesta.estado === "radar")
-      .flatMap((respuesta) => medicionDesdeResultado(respuesta, consultadoEn).map((medicion) => guardarMedicionSatelital(respuesta.loteId, medicion)));
-    const resultadosGuardado = await Promise.allSettled(operaciones);
-    if (resultadosGuardado.some((resultado) => resultado.status === "rejected")) setNotice({ kind: "warning", text: "Los datos se obtuvieron, pero no se pudieron guardar en el historial." });
-  }
 
   async function persistirResultadosClima(resultadosClimaActuales: Record<string, ResultadoClimaLote>, origen: OrigenConsultaClima) {
     const operaciones = Object.values(resultadosClimaActuales)
@@ -230,7 +222,7 @@ export default function RodeoApp({ usuario, onUserUpdated, onLogout }: Props) {
   async function actualizarClima() { if (climaConsultando || !lotesActivos.length) return; setClimaConsultando(true); const resultado = await consultarClimaLotes(lotesActivos); setResultadosClima(resultado); setClimaConsultando(false); void persistirResultadosClima(resultado, "manual"); }
   async function analizar() {
     if (analizando || !lotesActivos.length) return; setAnalizando(true); setErrorAnalisis(null);
-    try { const consultadoEn = Date.now(); const respuestas = await analizarLotes(lotesActivos); const porLote: Record<string, ResultadoLote> = {}; respuestas.forEach((respuesta) => { porLote[respuesta.loteId] = respuesta; }); setResultados(porLote); setUltimoAnalisis(consultadoEn); void persistirResultadosSatelitales(respuestas, consultadoEn); const errores = respuestas.filter((respuesta) => respuesta.estado === "error"); if (errores.length) setErrorAnalisis(errores.length === respuestas.length ? errores[0].mensaje : `${errores.length} de ${respuestas.length} lotes no se pudieron consultar.`); }
+    try { const respuestas = await actualizarSateliteLotes(lotesActivos.map((lote) => lote.id)); const porLote: Record<string, ResultadoLote> = {}; respuestas.forEach((respuesta) => { porLote[respuesta.loteId] = respuesta; }); setResultados(porLote); setUltimoAnalisis(Date.now()); const errores = respuestas.filter((respuesta) => respuesta.estado === "error"); if (errores.length) setErrorAnalisis(errores.length === respuestas.length ? errores[0].mensaje : `${errores.length} de ${respuestas.length} lotes no se pudieron consultar.`); }
     finally { setAnalizando(false); }
   }
   const condicionPorLote = useMemo(() => {

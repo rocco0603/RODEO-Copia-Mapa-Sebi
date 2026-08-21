@@ -12,6 +12,18 @@ Las rutas son una propuesta inicial. Si durante implementación se cambia una, a
 - nunca aceptar `user_id` como autoridad enviada por el frontend: el backend obtiene el usuario desde la sesión;
 - errores con status HTTP correcto + mensaje legible;
 - no devolver `password_hash`.
+- cada respuesta incluye `X-Request-Id`; un identificador entrante válido se conserva y uno inválido se reemplaza;
+- el body JSON tiene un límite de 1 MB;
+- login y registro comparten un rate limit por IP.
+
+## Salud operativa
+
+- `GET /api/health/live`: liveness del proceso, sin consultar PostgreSQL;
+- `GET /api/health/ready`: readiness con consulta mínima a PostgreSQL;
+- `GET /api/health`: alias compatible de readiness.
+
+Readiness devuelve `503` y `{ "status": "degraded", "database":
+"unavailable" }` si PostgreSQL no está disponible.
 
 ## Auth
 
@@ -242,12 +254,21 @@ Formato recomendado:
 
 Códigos legibles ayudan al frontend a decidir cómo mostrar el error sin depender sólo del texto.
 
+La infraestructura agrega, entre otros:
+
+- `INVALID_JSON` con `400` si el body no es JSON válido;
+- `PAYLOAD_TOO_LARGE` con `413` si supera 1 MB;
+- `AUTH_RATE_LIMITED` con `429` al exceder intentos de login/registro.
+
+Los errores inesperados se registran con el mismo request ID de la respuesta,
+sin incluir body, cookies, headers de autorización ni secretos.
+
 ## Estado de implementación
 
-Auth, Establecimiento y Lotes ya están implementados en el backend. La sesión
-usa la cookie HttpOnly `rodeo_session` y los errores usan `{ "error": { "code",
-"message" } }`. Satélite, clima y notificaciones siguen siendo contratos
-futuros.
+Auth, Establecimiento, Lotes, historial, actualización satelital, gateway de
+Open-Meteo y notificaciones base ya están implementados. La sesión usa la
+cookie HttpOnly `rodeo_session` y los errores usan `{ "error": { "code",
+"message" } }`.
 
 ## Compatibilidad frontend
 
@@ -280,18 +301,34 @@ Los DTOs deberían mantener nombres y estructuras cercanas a los tipos existente
 
 ## Consumo desde la ficha del lote
 
-## Gateway Copernicus
+## Copernicus y actualización satelital
 
-`GET /api/copernicus/estado` y `POST /api/copernicus/statistics` requieren
-sesiÃ³n autenticada. El primero devuelve `{ "configurado": boolean }`. El
-segundo reenvÃ­a el body JSON a la Statistical API y conserva respuestas como
-429. Sin credenciales devuelve 503 con `COPERNICUS_NOT_CONFIGURED`.
+`GET /api/copernicus/estado` requiere sesión y devuelve
+`{ "configurado": boolean }`. El endpoint raw
+`POST /api/copernicus/statistics` ya no existe: el navegador no puede enviar
+geometrías, evalscripts ni bodies arbitrarios usando la cuota del servidor.
+
+`POST /api/lotes/:id/satelite/actualizar` no recibe body. Valida UUID, sesión,
+ownership y soft delete; obtiene el polígono de PostgreSQL, consulta S2 y S1,
+interpreta, calcula el scoring provisional vigente, persiste y devuelve
+`{ "resultado": ResultadoLote }`. Lote ajeno o inexistente devuelve el mismo
+`LOT_NOT_FOUND`; UUID inválido devuelve `INVALID_LOT_ID`.
+
+`POST /api/lotes/satelite/actualizar` recibe
+`{ "loteIds": ["uuid", "uuid"] }`. Valida todos los IDs y su pertenencia en una
+consulta agrupada, mantiene el orden pedido y responde
+`{ "resultados": ResultadoLote[] }`. La concurrencia se limita a dos lotes,
+igual que en la implementación anterior.
+
+`consulted_at` usa una referencia del reloj servidor por request. Cada lote
+persiste sus mediciones en una transacción: S1 y S2 ocupan filas distintas y
+el `UNIQUE (lote_id, fuente, observed_at)` conserva el upsert. `error` y
+`sin-datos` no crean filas.
 
 La ruta frontend `/lotes/:id` carga el estado consolidado y, en paralelo, los
 tres listados paginados existentes con 20 elementos por pÃ¡gina. Las
-actualizaciones desde la ficha reutilizan los POST existentes y vuelven a
-cargar estado e historial; no agregan endpoints ni modifican el contrato del
-backend.
+actualizaciones satelitales desde la ficha usan el endpoint individual y luego
+recargan estado e historial. El frontend no convierte ni persiste mediciones.
 
 ## `POST /api/clima/consultar`
 

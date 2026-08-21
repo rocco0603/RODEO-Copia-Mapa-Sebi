@@ -154,7 +154,8 @@ Cambiar eliminación de lote:
 
 ## Fase 8 — persistencia satelital
 
-Objetivo final: la consulta a Copernicus pasa por backend.
+Estado: completada. La consulta, interpretación, scoring provisional y
+persistencia de Copernicus pasan por backend.
 
 Pasos seguros:
 
@@ -165,7 +166,9 @@ Pasos seguros:
 5. devolver condición actual + tendencia al frontend;
 6. mantener Sentinel-1 separado de Sentinel-2.
 
-El `vite-plugin-copernicus.ts` actual puede coexistir temporalmente durante la migración, pero el objetivo es retirarlo cuando el backend cubra su función.
+El backend conserva datasets, evalscripts, ventanas, resolución, cobertura,
+p50, tendencia, concurrencia, scoring y fallback anteriores. El frontend sólo
+solicita actualizaciones por ID y el endpoint raw `/statistics` fue retirado.
 
 ## Fase 9 — persistencia de clima
 
@@ -243,7 +246,23 @@ el estado consolidado y los historiales paginados existentes, separa Sentinel-2
 También permite actualizar satélite/clima y registrar usos con las APIs ya
 existentes. La ausencia de datos se muestra explícitamente.
 
+## Centralización satelital completa (implementada)
+
+El backend es dueño del lote/polígono, los requests Statistical API, los
+evalscripts, el parsing, el scoring provisional y la persistencia. La ficha usa
+`POST /api/lotes/:id/satelite/actualizar`; el mapa usa
+`POST /api/lotes/satelite/actualizar` con IDs. El endpoint raw
+`/api/copernicus/statistics` fue retirado. S1/S2 permanecen separados y cada
+resultado de un lote se guarda en una transacción con reloj servidor.
+
+Las descripciones anteriores que presentan esta centralización como futura son
+contexto histórico del orden de implementación, no el estado vigente.
+
 ## Definition of done por fase
+
+El bloque histórico siguiente conserva el estado de una etapa anterior. Para
+el estado satelital vigente manda la sección “Centralización satelital
+completa (implementada)” inmediatamente anterior.
 
 ## Estado real de la etapa de onboarding y persistencia
 
@@ -295,3 +314,19 @@ el mismo servicio que el endpoint individual. Ejecuta consultas agrupadas por
 conjunto de lotes, mantiene orden por número y permite incluir inactivos sin
 exponer soft-deleted. La paginación de esta colección queda deliberadamente
 para cuando el dominio permita muchos más lotes por establecimiento.
+
+## Etapa de hardening de producción
+
+Implementada sin cambios de modelo ni reglas de negocio:
+
+- validación central de entorno, CORS y cookies configurables;
+- Helmet, JSON máximo de 1 MB y rate limit para login/registro;
+- request IDs, logs estructurados y pool PostgreSQL acotado;
+- liveness/readiness, timeouts HTTP y cierre ordenado;
+- URL pública opcional del backend centralizada en el cliente frontend;
+- tests de infraestructura y CI de validación en GitHub Actions;
+- guía de despliegue independiente de proveedor en `docs/DEPLOYMENT.md`.
+
+Siguen pendientes el proveedor, los dominios y la automatización del deploy.
+Si se escala a múltiples instancias, el store en memoria del rate limit debe
+reemplazarse por uno compartido.

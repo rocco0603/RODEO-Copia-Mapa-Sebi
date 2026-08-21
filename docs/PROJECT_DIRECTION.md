@@ -1,5 +1,13 @@
 # Dirección actual de RODEO
 
+## Actualización de arquitectura vigente
+
+Copernicus es opcional y sus credenciales viven exclusivamente en
+`backend/.env`. El backend es dueño de la consulta, interpretación, scoring
+provisional y persistencia satelital; el frontend sólo envía IDs. Las
+descripciones posteriores sobre Node/Vite o `localStorage` son contexto
+histórico ya superado por la implementación actual.
+
 ## Objetivo de esta etapa
 
 El repositorio tiene un frontend funcional y ya cuenta con usuarios,

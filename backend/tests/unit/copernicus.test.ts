@@ -21,7 +21,11 @@ describe('gateway backend de Copernicus', () => {
 
   test('devuelve 503 si statistics se solicita sin configurar Copernicus', async () => {
     const { client } = cliente([], { clientId: '', clientSecret: '' });
-    await expect(client.obtenerEstadisticas('{}')).rejects.toMatchObject({ status: 503, code: 'COPERNICUS_NOT_CONFIGURED' });
+    await expect(client.obtenerEstadisticas('{}')).rejects.toMatchObject({
+      status: 503,
+      code: 'COPERNICUS_NOT_CONFIGURED',
+      message: 'Copernicus no está configurado en el backend.',
+    });
   });
 
   test('obtiene token, reenvía la respuesta y conserva un 429 del upstream', async () => {
@@ -47,7 +51,7 @@ describe('gateway backend de Copernicus', () => {
     expect(llamadas.filter((llamada) => llamada.autorizacion).map((llamada) => llamada.autorizacion)).toEqual(['Bearer token-uno', 'Bearer token-dos']);
   });
 
-  test('no filtra el secreto si la autenticaciÃ³n del upstream falla', async () => {
+  test('no filtra el secreto si la autenticación del upstream falla', async () => {
     const { client } = cliente([{ status: 401, texto: 'secreto-no-debe-aparecer' }]);
     try { await client.obtenerEstadisticas('{}'); } catch (error) {
       expect(error).toBeInstanceOf(ApiError);

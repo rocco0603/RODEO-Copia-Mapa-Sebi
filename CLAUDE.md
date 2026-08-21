@@ -1,6 +1,9 @@
 # RODEO
 
-Front de gestión de establecimiento y lotes para ganadería (React + Vite + TS), con condición de pastoreo satelital y clima por lote. El proyecto ahora entra en una nueva etapa: además del frontend existente, este repositorio incorporará backend, PostgreSQL, autenticación y persistencia histórica.
+Aplicación de gestión de establecimiento y lotes para ganadería. El repositorio
+ya contiene frontend React/Vite y backend Node/Express/PostgreSQL, con
+autenticación, persistencia histórica, Copernicus, Open-Meteo y notificaciones
+base.
 
 ## Antes de tocar nada
 
@@ -34,8 +37,9 @@ El radar Sentinel-1 nunca se mezcla con la óptica Sentinel-2 en el mismo puntaj
 - onboarding backend irreversible; la pantalla visual completa sigue pendiente;
 - mapa, Copernicus y Open-Meteo existentes.
 
-La persistencia histórica de satélite/clima y sus APIs backend son etapas
-posteriores.
+La persistencia histórica de satélite/clima y sus APIs backend están
+implementadas. La actualización satelital completa ya es responsabilidad de
+Express; la persistencia completa server-side de clima sigue separada.
 
 ## Qué sigue pausado
 
@@ -93,6 +97,18 @@ La API y el panel de notificaciones estÃ¡n implementados sobre la tabla
 existente, con aislamiento por sesiÃ³n, paginaciÃ³n y leÃ­do/no leÃ­do. No crear
 reglas automÃ¡ticas ni tipos agronÃ³micos hasta que producto los defina.
 
+## Actualización satelital
+
+Copernicus está centralizado completamente en Express. El backend obtiene el
+lote y su polígono desde PostgreSQL, construye las consultas S2/S1, interpreta,
+calcula el scoring provisional sin recalibrarlo y persiste con reloj servidor.
+El frontend sólo envía IDs mediante los endpoints individual/batch y consume
+`ResultadoLote`. No existe un endpoint raw `/api/copernicus/statistics`.
+
+Los evalscripts y el scoring activos viven en `backend/src/copernicus/`.
+Sentinel-1 y Sentinel-2 permanecen separados y `error`/`sin-datos` no se
+persisten.
+
 ## Seguridad
 
 La persistencia histórica debe guardar únicamente datos reales recibidos de
@@ -111,6 +127,20 @@ esta etapa.
 Validar cambios con TypeScript y build. Cuando exista backend, validar también sus endpoints y su conexión/schema.
 
 No hay que asumir que algo "debería" funcionar: comprobarlo y documentar cualquier decisión relevante.
+
+## Hardening y despliegue
+
+La configuración backend se valida al arrancar. Mantener centralizadas las
+variables en `src/config`: DB y JWT son obligatorias, Copernicus es opcional,
+CORS usa orígenes exactos y `SameSite=None` sólo es válido en producción con
+cookie `Secure`. `TRUST_PROXY` debe representar saltos reales, no habilitarse
+genéricamente.
+
+El frontend consume todas las APIs mediante `src/api/client.ts` y
+`VITE_API_BASE_URL` opcional; no agregar `fetch` directos que salteen esa base.
+El backend conserva Helmet, JSON máximo de 1 MB, rate limit de auth, request ID,
+logs estructurados, `/api/health/live`, `/api/health/ready` y cierre ordenado.
+Consultar `docs/DEPLOYMENT.md` antes de preparar una plataforma concreta.
 
 ## Historial y estado actual
 

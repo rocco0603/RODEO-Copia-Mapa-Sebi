@@ -54,9 +54,9 @@ const transporteHttps: TransporteCopernicus = (url, cuerpo, cabeceras) => new Pr
     res.on('data', (chunk) => { texto += chunk; });
     res.on('end', () => resolve({ status: res.statusCode ?? 0, texto }));
   });
-  req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error(`La consulta a ${destino.hostname} superÃ³ los ${TIMEOUT_MS / 1000} s.`)));
+  req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error(`La consulta a ${destino.hostname} superó los ${TIMEOUT_MS / 1000} s.`)));
   req.on('error', (error: NodeJS.ErrnoException) => {
-    if (error.code && ERRORES_TLS.has(error.code)) { reject(new ErrorCopernicus(502, `TLS rechazado al conectar con ${destino.hostname} (${error.code}). EjecutÃ¡ npm run certs o configurÃ¡ NODE_EXTRA_CA_CERTS.`)); return; }
+    if (error.code && ERRORES_TLS.has(error.code)) { reject(new ErrorCopernicus(502, `TLS rechazado al conectar con ${destino.hostname} (${error.code}). Ejecutá npm run certs o configurá NODE_EXTRA_CA_CERTS.`)); return; }
     reject(new ErrorCopernicus(502, `No se pudo conectar con Copernicus (${error.message}).`));
   });
   req.write(cuerpo); req.end();
@@ -70,7 +70,7 @@ export class CopernicusClient {
     return Boolean(clientId && clientSecret && !PLACEHOLDER.test(clientId) && !PLACEHOLDER.test(clientSecret));
   }
   async obtenerEstadisticas(cuerpo: string): Promise<RespuestaCopernicus> {
-    if (!this.credencialesConfiguradas()) throw new ApiError(503, 'COPERNICUS_NOT_CONFIGURED', 'Copernicus no estÃ¡ configurado en el backend.');
+    if (!this.credencialesConfiguradas()) throw new ApiError(503, 'COPERNICUS_NOT_CONFIGURED', 'Copernicus no está configurado en el backend.');
     let respuesta = await this.llamarEstadisticas(await this.obtenerToken(), cuerpo);
     if (respuesta.status === 401) respuesta = await this.llamarEstadisticas(await this.obtenerToken(true), cuerpo);
     return respuesta;
@@ -79,10 +79,10 @@ export class CopernicusClient {
     const credenciales = this.obtenerCredenciales();
     if (!forzarRenovacion && this.tokenCache && this.tokenCache.clientId === credenciales.clientId && this.ahora() < this.tokenCache.expiraEn) return this.tokenCache.token;
     const respuesta = await this.transportar(TOKEN_URL, new URLSearchParams({ grant_type: 'client_credentials', client_id: credenciales.clientId, client_secret: credenciales.clientSecret }).toString(), { 'Content-Type': 'application/x-www-form-urlencoded' });
-    if (respuesta.status !== 200) { this.tokenCache = null; throw new ApiError(502, 'COPERNICUS_AUTH_FAILED', 'Copernicus rechazÃ³ las credenciales configuradas.'); }
+    if (respuesta.status !== 200) { this.tokenCache = null; throw new ApiError(502, 'COPERNICUS_AUTH_FAILED', 'Copernicus rechazó las credenciales configuradas.'); }
     let json: { access_token?: string; expires_in?: number };
-    try { json = JSON.parse(respuesta.texto) as { access_token?: string; expires_in?: number }; } catch { throw new ErrorCopernicus(502, 'Copernicus devolviÃ³ una respuesta de autenticaciÃ³n invÃ¡lida.'); }
-    if (!json.access_token || typeof json.expires_in !== 'number') throw new ErrorCopernicus(502, 'Copernicus devolviÃ³ una respuesta de autenticaciÃ³n invÃ¡lida.');
+    try { json = JSON.parse(respuesta.texto) as { access_token?: string; expires_in?: number }; } catch { throw new ErrorCopernicus(502, 'Copernicus devolvió una respuesta de autenticación inválida.'); }
+    if (!json.access_token || typeof json.expires_in !== 'number') throw new ErrorCopernicus(502, 'Copernicus devolvió una respuesta de autenticación inválida.');
     this.tokenCache = { token: json.access_token, expiraEn: this.ahora() + Math.max(0, json.expires_in * 1000 - RENOVAR_ANTES_MS), clientId: credenciales.clientId };
     return json.access_token;
   }

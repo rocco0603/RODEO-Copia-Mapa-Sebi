@@ -6,6 +6,12 @@ import type { JwtPayload } from './types.js';
 export const COOKIE_NAME = 'rodeo_session';
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
+function atributosCookie(maxAge: number): string {
+  const sameSite = `${env.cookieSameSite[0].toUpperCase()}${env.cookieSameSite.slice(1)}`;
+  const secure = env.cookieSecure ? '; Secure' : '';
+  return `Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secure}`;
+}
+
 export function crearToken(userId: string): string {
   return jwt.sign({}, env.authJwtSecret, { subject: userId, expiresIn: MAX_AGE_SECONDS });
 }
@@ -28,11 +34,9 @@ export function verificarToken(token: string): JwtPayload | null {
 }
 
 export function guardarCookie(res: Response, token: string): void {
-  const secure = env.nodeEnv === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE_SECONDS}${secure}`);
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; ${atributosCookie(MAX_AGE_SECONDS)}`);
 }
 
 export function limpiarCookie(res: Response): void {
-  const secure = env.nodeEnv === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; ${atributosCookie(0)}`);
 }

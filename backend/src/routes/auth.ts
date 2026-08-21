@@ -5,6 +5,7 @@ import { asyncHandler } from '../http/async-handler.js';
 import { ApiError } from '../http/errors.js';
 import { guardarCookie, limpiarCookie, crearToken } from '../auth/session.js';
 import { requiereAutenticacion } from '../auth/middleware.js';
+import { authRateLimiter } from '../http/auth-rate-limit.js';
 
 export const authRouter = Router();
 
@@ -24,7 +25,7 @@ function credenciales(body: unknown): { username: string; password: string } {
   return { username: values.username.trim(), password: values.password };
 }
 
-authRouter.post('/register', asyncHandler(async (req, res) => {
+authRouter.post('/register', authRateLimiter, asyncHandler(async (req, res) => {
   const { username, password } = credenciales(req.body);
   const passwordHash = await bcrypt.hash(password, 12);
   try {
@@ -43,7 +44,7 @@ authRouter.post('/register', asyncHandler(async (req, res) => {
   }
 }));
 
-authRouter.post('/login', asyncHandler(async (req, res) => {
+authRouter.post('/login', authRateLimiter, asyncHandler(async (req, res) => {
   const { username, password } = credenciales(req.body);
   const result = await pool.query<{ id: string; username: string; password_hash: string; onboarding_completed_at: Date | null }>(
     'SELECT id, username, password_hash, onboarding_completed_at FROM usuarios WHERE username = $1',

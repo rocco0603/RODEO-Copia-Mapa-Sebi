@@ -63,6 +63,10 @@ Una vez terminado el onboarding, borrar o desactivar todos los lotes NO vuelve a
 - guardar sólo `password_hash`;
 - secretos de Copernicus y PostgreSQL sólo del lado servidor / `.env` gitignored;
 - nunca exponer `COPERNICUS_CLIENT_SECRET` al navegador.
+- todas las llamadas HTTP del frontend a la API deben pasar por `src/api/client.ts`
+  para respetar `VITE_API_BASE_URL` y `credentials: "include"`;
+- preservar validación de entorno, CORS explícito, cookies seguras, Helmet,
+  límite de body, rate limit de auth, request IDs y cierre ordenado.
 
 ## Estilo del código
 

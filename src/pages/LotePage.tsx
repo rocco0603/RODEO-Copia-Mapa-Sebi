@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { analizarLotes } from "../copernicus/api";
-import type { ResultadoLote } from "../copernicus/types";
+import { actualizarSateliteLote } from "../copernicus/api";
 import { consultarClimaLotes } from "../clima/api";
 import { obtenerLotes } from "../api/rodeo";
 import { ApiError } from "../api/client";
-import { guardarConsultaClima, guardarMedicionSatelital, medicionDesdeResultado, obtenerConsultasClima, obtenerEstadoLote, obtenerMedicionesSatelitales, obtenerUsosLote, registrarUsoLote, type ConsultaClimaHistorial, type EstadoLoteApi, type MedicionSatelital, type PaginacionHistorial, type UsoLote } from "../api/historial";
+import { guardarConsultaClima, obtenerConsultasClima, obtenerEstadoLote, obtenerMedicionesSatelitales, obtenerUsosLote, registrarUsoLote, type ConsultaClimaHistorial, type EstadoLoteApi, type MedicionSatelital, type PaginacionHistorial, type UsoLote } from "../api/historial";
 import type { Lote } from "../types";
 import "./LotePage.css";
 
@@ -132,27 +131,16 @@ export default function LotePage() {
   async function actualizarSatelite() {
     if (!lote || ocupado) return;
     setOcupado("satelite"); setError(null);
-    let respuestas: ResultadoLote[];
     try {
-      respuestas = await analizarLotes([lote]);
+      const respuesta = await actualizarSateliteLote(lote.id);
+      if (respuesta.estado !== "ok" && respuesta.estado !== "radar") {
+        setError(respuesta.mensaje ?? "Copernicus no devolvió datos utilizables.");
+        return;
+      }
+      await cargarDatos();
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : "No se pudo consultar Copernicus. Intentá nuevamente.");
-      setOcupado(null);
-      return;
-    }
-    const respuesta = respuestas[0];
-    if (respuesta?.estado !== "ok" && respuesta?.estado !== "radar") {
-      setError(respuesta?.mensaje ?? "Copernicus no devolvió datos utilizables.");
-      setOcupado(null);
-      return;
-    }
-    try {
-      await Promise.all(medicionDesdeResultado(respuesta, Date.now()).map((medicion) => guardarMedicionSatelital(lote.id, medicion)));
-      await cargarDatos();
-    } catch {
-      setError("Los datos satelitales se obtuvieron correctamente, pero no se pudieron guardar en el historial.");
-    }
-    finally { setOcupado(null); }
+    } finally { setOcupado(null); }
   }
 
   async function actualizarClima() {

@@ -5,6 +5,9 @@ import type { Pool } from 'pg';
 import { establecimiento, lote, clima, medicionOptica, medicionRadar } from '../helpers/fixtures.js';
 import { migrateTestDatabase, resetTestDatabase } from '../helpers/db.js';
 import { openMeteo } from '../../src/services/open-meteo.js';
+import { analizadorSatelital, type GatewayEstadisticas } from '../../src/copernicus/analizar.js';
+import type { IntervaloEstadisticas, StatsCrudas } from '../../src/copernicus/types.js';
+import { reiniciarRateLimitAuth } from '../../src/http/auth-rate-limit.js';
 
 const tieneBaseDeTest = Boolean(process.env.TEST_DATABASE_URL);
 const integration = tieneBaseDeTest ? describe : describe.skip;
@@ -52,16 +55,43 @@ async function insertarNotificacion(username: string, titulo: string, createdAt:
   return result.rows[0];
 }
 
+function fechaUtc(diasAtras: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - diasAtras);
+  return date.toISOString().slice(0, 10);
+}
+
+function statsSatelital(media: number): StatsCrudas {
+  return { min: -0.2, max: 0.8, mean: media, stDev: 0.1, sampleCount: 100, noDataCount: 10, percentiles: { '50.0': media + 0.01 } };
+}
+
+function intervaloS2(fecha = fechaUtc(1)): IntervaloEstadisticas {
+  const output = (media: number) => ({ bands: { B0: { stats: statsSatelital(media) } } });
+  return { interval: { from: `${fecha}T00:00:00Z`, to: `${fecha}T23:59:59Z` }, outputs: { ndvi: output(0.49), ndmi: output(0.125), ndwi: output(-0.1), evi: output(0.325) } };
+}
+
+function intervaloS1(fecha = fechaUtc(0)): IntervaloEstadisticas {
+  return { interval: { from: `${fecha}T00:00:00Z`, to: `${fecha}T23:59:59Z` }, outputs: { rvi: { bands: { B0: { stats: statsSatelital(0.6) } } } } };
+}
+
+function gatewaySatelital(optico: IntervaloEstadisticas[] = [intervaloS2()], radar: IntervaloEstadisticas[] = []): GatewayEstadisticas {
+  return { obtenerEstadisticas: async (cuerpo) => ({ status: 200, texto: JSON.stringify({ data: JSON.parse(cuerpo).input.data[0].type === 'sentinel-2-l2a' ? optico : radar }) }) };
+}
+
 integration('API backend de RODEO', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
+    process.env.CORS_ORIGINS = 'https://app.rodeo.test';
     const modules = await Promise.all([import('../../src/app.js'), import('../../src/db/pool.js')]);
     app = modules[0].app;
     pool = modules[1].pool;
     await migrateTestDatabase(pool);
   });
 
-  beforeEach(async () => { await resetTestDatabase(pool); });
+  beforeEach(async () => {
+    await reiniciarRateLimitAuth();
+    await resetTestDatabase(pool);
+  });
 
   afterAll(async () => { await pool.end(); });
 
@@ -70,6 +100,8 @@ integration('API backend de RODEO', () => {
       const response = await request(app).get('/api/health');
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ status: 'ok', database: 'ok' });
+      expect((await request(app).get('/api/health/live')).body).toEqual({ status: 'ok' });
+      expect((await request(app).get('/api/health/ready')).body).toEqual({ status: 'ok', database: 'ok' });
     });
 
     test('registra username trimmeado, hash y onboarding pendiente', async () => {
@@ -103,7 +135,10 @@ integration('API backend de RODEO', () => {
       const agent = request.agent(app);
       const login = await agent.post('/api/auth/login').send({ username: 'login_user', password: 'password-segura-2026' });
       expect(login.status).toBe(200);
-      expect(login.headers['set-cookie'][0]).toMatch(/rodeo_session=.*HttpOnly/);
+      const cookie = login.headers['set-cookie'][0];
+      expect(cookie).toMatch(/rodeo_session=.*HttpOnly/);
+      expect(cookie).toContain('SameSite=Lax');
+      expect(cookie).not.toMatch(/;\s*Secure/i);
       expect(login.body).not.toHaveProperty('token');
       const me = await agent.get('/api/auth/me');
       expect(me.status).toBe(200);
@@ -120,7 +155,7 @@ integration('API backend de RODEO', () => {
   });
 
   describe('gateway Copernicus', () => {
-    test('rechaza usuario sin sesiÃ³n', async () => {
+    test('rechaza usuario sin sesión', async () => {
       expect((await request(app).get('/api/copernicus/estado')).status).toBe(401);
       expect((await request(app).post('/api/copernicus/statistics').send({})).status).toBe(401);
     });
@@ -142,31 +177,144 @@ integration('API backend de RODEO', () => {
       }
     });
 
-    test('statistics devuelve 503 controlado sin credenciales', async () => {
+    test('ya no expone el proxy raw de statistics a usuarios autenticados', async () => {
+      const { agent } = await prepararLote('copernicus_raw_removed_user');
+      expect((await agent.post('/api/copernicus/statistics').send({ input: {} })).status).toBe(404);
+    });
+  });
+
+  describe('actualización satelital centralizada', () => {
+    test('requiere sesión y valida UUID e input batch', async () => {
+      expect((await request(app).post(`/api/lotes/${crypto.randomUUID()}/satelite/actualizar`)).status).toBe(401);
+      const { agent } = await prepararLote('satellite_update_validation_user');
+      expect((await agent.post('/api/lotes/no-es-uuid/satelite/actualizar')).body.error.code).toBe('INVALID_LOT_ID');
+      for (const loteIds of [undefined, 'no-array', [], ['no-es-uuid']]) {
+        expect((await agent.post('/api/lotes/satelite/actualizar').send({ loteIds })).body.error.code).toBe('INVALID_LOT_IDS');
+      }
+    });
+
+    test('no revela lotes ajenos ni soft-deleted y no consulta el upstream', async () => {
+      const owner = await prepararLote('satellite_update_owner');
+      const other = await prepararLote('satellite_update_other');
+      let llamadas = 0;
+      const anterior = analizadorSatelital.reemplazarGateway({ obtenerEstadisticas: async () => { llamadas += 1; return { status: 200, texto: '{"data":[]}' }; } });
+      try {
+        expect((await other.agent.post(`/api/lotes/${owner.lot.id}/satelite/actualizar`)).body.error.code).toBe('LOT_NOT_FOUND');
+        await owner.agent.delete(`/api/lotes/${owner.lot.id}`);
+        expect((await owner.agent.post(`/api/lotes/${owner.lot.id}/satelite/actualizar`)).body.error.code).toBe('LOT_NOT_FOUND');
+        expect(llamadas).toBe(0);
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
+
+    test('credenciales ausentes producen un error controlado y no crean historial', async () => {
+      const { agent, lot } = await prepararLote('satellite_update_missing_credentials_user');
       const anteriorId = process.env.COPERNICUS_CLIENT_ID;
       const anteriorSecret = process.env.COPERNICUS_CLIENT_SECRET;
+      const anteriorGateway = analizadorSatelital.reemplazarGateway((await import('../../src/services/copernicus.js')).copernicus);
       try {
-        const { agent } = await prepararLote('copernicus_missing_user');
         delete process.env.COPERNICUS_CLIENT_ID;
         delete process.env.COPERNICUS_CLIENT_SECRET;
-        const response = await agent.post('/api/copernicus/statistics').send({ input: {} });
-        expect(response.status).toBe(503);
-        expect(response.body.error.code).toBe('COPERNICUS_NOT_CONFIGURED');
+        const response = await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`);
+        expect(response.status).toBe(200);
+        expect(response.body.resultado).toMatchObject({ estado: 'error', mensaje: expect.stringContaining('no está configurado') });
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(0);
       } finally {
+        analizadorSatelital.reemplazarGateway(anteriorGateway);
         if (anteriorId === undefined) delete process.env.COPERNICUS_CLIENT_ID; else process.env.COPERNICUS_CLIENT_ID = anteriorId;
         if (anteriorSecret === undefined) delete process.env.COPERNICUS_CLIENT_SECRET; else process.env.COPERNICUS_CLIENT_SECRET = anteriorSecret;
       }
     });
+
+    test('consulta S2 con el polígono de DB, devuelve ResultadoLote y persiste usando reloj servidor', async () => {
+      const { agent, lot } = await prepararLote('satellite_update_s2_user');
+      let cuerpo: Record<string, any> | null = null;
+      const base = gatewaySatelital();
+      const anterior = analizadorSatelital.reemplazarGateway({ obtenerEstadisticas: async (requestBody) => { const parsed = JSON.parse(requestBody); if (parsed.input.data[0].type === 'sentinel-2-l2a') cuerpo = parsed; return base.obtenerEstadisticas(requestBody); } });
+      try {
+        const antes = Date.now();
+        const response = await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`);
+        expect(response.status).toBe(200);
+        expect(response.body.resultado).toMatchObject({ estado: 'ok', loteId: lot.id, condicion: { fecha: fechaUtc(1), categoria: 'buena' } });
+        expect((cuerpo as Record<string, any> | null)?.input.bounds.geometry).toEqual(lot.polygon.geometry);
+        const rows = await pool.query('SELECT fuente, observed_at, consulted_at, ndvi_mediana, alertas FROM mediciones_satelitales WHERE lote_id = $1', [lot.id]);
+        expect(rows.rows).toHaveLength(1);
+        expect(rows.rows[0].fuente).toBe('sentinel-2');
+        expect(rows.rows[0].observed_at).toBe(fechaUtc(1));
+        expect(rows.rows[0].consulted_at.getTime()).toBeGreaterThanOrEqual(antes);
+        expect(rows.rows[0].alertas).toEqual([]);
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
+
+    test('repetir observed_at hace upsert y no duplica', async () => {
+      const { agent, lot } = await prepararLote('satellite_update_upsert_user');
+      const anterior = analizadorSatelital.reemplazarGateway(gatewaySatelital());
+      try {
+        expect((await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`)).status).toBe(200);
+        expect((await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`)).status).toBe(200);
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(1);
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
+
+    test('persiste S1 y S2 en filas separadas cuando radar gana por frescura', async () => {
+      const { agent, lot } = await prepararLote('satellite_update_radar_user');
+      const anterior = analizadorSatelital.reemplazarGateway(gatewaySatelital([intervaloS2(fechaUtc(3))], [intervaloS1(fechaUtc(0))]));
+      try {
+        const response = await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`);
+        expect(response.body.resultado).toMatchObject({ estado: 'radar', loteId: lot.id, optico: { fecha: fechaUtc(3) } });
+        const rows = await pool.query('SELECT fuente, ndvi_mediana, rvi_mediana, consulted_at FROM mediciones_satelitales WHERE lote_id = $1 ORDER BY fuente', [lot.id]);
+        expect(rows.rows).toHaveLength(2);
+        expect(rows.rows.map((row) => row.fuente)).toEqual(['sentinel-1', 'sentinel-2']);
+        expect(rows.rows[0].ndvi_mediana).toBeNull();
+        expect(rows.rows[1].rvi_mediana).toBeNull();
+        expect(rows.rows[0].consulted_at.toISOString()).toBe(rows.rows[1].consulted_at.toISOString());
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
+
+    test('error upstream y sin datos devuelven estado explícito sin persistir', async () => {
+      const { agent, lot } = await prepararLote('satellite_update_no_data_user');
+      let anterior = analizadorSatelital.reemplazarGateway({ obtenerEstadisticas: async (cuerpo) => JSON.parse(cuerpo).input.data[0].type === 'sentinel-2-l2a' ? { status: 429, texto: '{}' } : { status: 200, texto: '{"data":[]}' } });
+      try {
+        expect((await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`)).body.resultado).toMatchObject({ estado: 'error', mensaje: expect.stringContaining('(429)') });
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+      anterior = analizadorSatelital.reemplazarGateway(gatewaySatelital([], []));
+      try {
+        expect((await agent.post(`/api/lotes/${lot.id}/satelite/actualizar`)).body.resultado.estado).toBe('sin-datos');
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1', [lot.id])).rows[0].count).toBe(0);
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
+
+    test('batch mantiene asociación, valida ownership conjunto y limita a dos lotes simultáneos', async () => {
+      const agent = await registrar('satellite_update_batch_user');
+      await crearEstablecimiento(agent);
+      const lotes = [await crearLote(agent, 1, 2), await crearLote(agent, 3, 4), await crearLote(agent, 5, 6)];
+      const ajeno = await prepararLote('satellite_update_batch_other');
+      let activas = 0;
+      let maximas = 0;
+      const anterior = analizadorSatelital.reemplazarGateway({ obtenerEstadisticas: async (cuerpo) => {
+        activas += 1; maximas = Math.max(maximas, activas);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activas -= 1;
+        return { status: 200, texto: JSON.stringify({ data: JSON.parse(cuerpo).input.data[0].type === 'sentinel-2-l2a' ? [intervaloS2()] : [] }) };
+      } });
+      try {
+        const response = await agent.post('/api/lotes/satelite/actualizar').send({ loteIds: lotes.map((item) => item.id) });
+        expect(response.status).toBe(200);
+        expect(response.body.resultados.map((item: { loteId: string }) => item.loteId)).toEqual(lotes.map((item) => item.id));
+        expect(maximas).toBeLessThanOrEqual(4);
+        expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = ANY($1::uuid[])', [lotes.map((item) => item.id)])).rows[0].count).toBe(3);
+        expect((await agent.post('/api/lotes/satelite/actualizar').send({ loteIds: [lotes[0].id, ajeno.lot.id] })).body.error.code).toBe('LOT_NOT_FOUND');
+      } finally { analizadorSatelital.reemplazarGateway(anterior); }
+    });
   });
 
   describe('gateway Open-Meteo', () => {
-    test('requiere sesiÃ³n y valida loteIds', async () => {
+    test('requiere sesión y valida loteIds', async () => {
       expect((await request(app).post('/api/clima/consultar').send({ loteIds: [] })).status).toBe(401);
       const { agent } = await prepararLote('climate_gateway_invalid_user');
       expect((await agent.post('/api/clima/consultar').send({ loteIds: 'no-array' })).body.error.code).toBe('INVALID_LOT_IDS');
     });
 
-    test('consulta varios lotes con una llamada externa y conserva la asociaciÃ³n', async () => {
+    test('consulta varios lotes con una llamada externa y conserva la asociación', async () => {
       const agent = await registrar('climate_gateway_user');
       await crearEstablecimiento(agent);
       const first = await crearLote(agent, 1, 2);
@@ -194,12 +342,12 @@ integration('API backend de RODEO', () => {
   });
 
   describe('notificaciones', () => {
-    test('requiere sesiÃ³n para listar y marcar', async () => {
+    test('requiere sesión para listar y marcar', async () => {
       expect((await request(app).get('/api/notificaciones')).status).toBe(401);
       expect((await request(app).patch('/api/notificaciones/leidas')).status).toBe(401);
     });
 
-    test('aÃ­sla usuarios, ordena, pagina, filtra y calcula noLeidas globales', async () => {
+    test('aísla usuarios, ordena, pagina, filtra y calcula noLeidas globales', async () => {
       const owner = await registrar('notifications_owner');
       await registrar('notifications_other');
       await insertarNotificacion('notifications_owner', 'Primera', '2026-08-20T10:00:00.000Z');
@@ -235,11 +383,11 @@ integration('API backend de RODEO', () => {
       expect((await owner.patch('/api/notificaciones/id-invalido/leida')).status).toBe(400);
     });
 
-    test('marca todas sÃ³lo para el usuario y conserva read_at existente', async () => {
+    test('marca todas sólo para el usuario y conserva read_at existente', async () => {
       const owner = await registrar('notifications_all_owner');
       await registrar('notifications_all_other');
       const previa = '2026-08-19T09:00:00.000Z';
-      const leida = await insertarNotificacion('notifications_all_owner', 'Ya leÃ­da', '2026-08-19T08:00:00.000Z', { readAt: previa });
+      const leida = await insertarNotificacion('notifications_all_owner', 'Ya leída', '2026-08-19T08:00:00.000Z', { readAt: previa });
       await insertarNotificacion('notifications_all_owner', 'Nueva 1', '2026-08-20T10:00:00.000Z');
       await insertarNotificacion('notifications_all_owner', 'Nueva 2', '2026-08-20T11:00:00.000Z');
       const ajena = await insertarNotificacion('notifications_all_other', 'Ajena pendiente', '2026-08-20T12:00:00.000Z');

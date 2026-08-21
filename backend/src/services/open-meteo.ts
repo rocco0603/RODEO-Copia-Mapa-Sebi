@@ -74,12 +74,12 @@ export class OpenMeteoClient {
       respuesta = await this.transportar(`${ENDPOINT}?${params.toString()}`, controller.signal);
     } catch {
       clearTimeout(timeout);
-      return errorParaTodos('No se pudo contactar al servicio meteorolÃ³gico (Open-Meteo).');
+      return errorParaTodos('No se pudo contactar al servicio meteorológico (Open-Meteo).');
     }
     clearTimeout(timeout);
-    if (!respuesta.ok) return errorParaTodos(`Open-Meteo respondiÃ³ HTTP ${respuesta.status}.`);
+    if (!respuesta.ok) return errorParaTodos(`Open-Meteo respondió HTTP ${respuesta.status}.`);
     let json: unknown;
-    try { json = await respuesta.json(); } catch { return errorParaTodos('Open-Meteo devolviÃ³ una respuesta que no se pudo interpretar.'); }
+    try { json = await respuesta.json(); } catch { return errorParaTodos('Open-Meteo devolvió una respuesta que no se pudo interpretar.'); }
     const registros: RegistroOpenMeteo[] = Array.isArray(json) ? json as RegistroOpenMeteo[] : [json as RegistroOpenMeteo];
     const resultados: Record<string, ResultadoClimaLote> = {};
     lotes.forEach((lote, i) => {

@@ -11,7 +11,7 @@ notificacionesRouter.use(requiereAutenticacion);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function usuarioId(req: Request): string {
-  if (!req.usuario) throw new ApiError(401, 'UNAUTHENTICATED', 'NecesitÃ¡s iniciar sesiÃ³n.');
+  if (!req.usuario) throw new ApiError(401, 'UNAUTHENTICATED', 'Necesitás iniciar sesión.');
   return req.usuario.id;
 }
 
@@ -53,13 +53,13 @@ notificacionesRouter.patch('/leidas', asyncHandler(async (req, res) => {
 }));
 
 notificacionesRouter.patch('/:id/leida', asyncHandler(async (req, res) => {
-  if (!UUID.test(req.params.id)) throw new ApiError(400, 'INVALID_NOTIFICATION_ID', 'El ID de notificaciÃ³n no es vÃ¡lido.');
+  if (!UUID.test(req.params.id)) throw new ApiError(400, 'INVALID_NOTIFICATION_ID', 'El ID de notificación no es válido.');
   const result = await pool.query(
     `UPDATE notificaciones SET read_at = COALESCE(read_at, NOW())
      WHERE id = $1 AND user_id = $2
      RETURNING id, lote_id, tipo, titulo, mensaje, read_at, metadata, created_at`,
     [req.params.id, usuarioId(req)],
   );
-  if (!result.rows[0]) throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'NotificaciÃ³n inexistente.');
+  if (!result.rows[0]) throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notificación inexistente.');
   res.json({ notificacion: dto(result.rows[0]) });
 }));

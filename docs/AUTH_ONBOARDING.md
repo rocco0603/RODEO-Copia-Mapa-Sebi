@@ -117,7 +117,9 @@ No devolver `password_hash` nunca.
 ## Implementación actual de sesión
 
 El backend usa JWT firmado en la cookie HttpOnly `rodeo_session`, con
-`SameSite=Lax`, `Secure` en producción y duración de 7 días. El secreto se
+`SameSite=Lax` por defecto, `Secure` en producción y duración de 7 días. Para
+un frontend cross-site se configura `COOKIE_SAME_SITE=none`, opción que el
+backend sólo admite en producción junto con `Secure`. El secreto se
 configura con `AUTH_JWT_SECRET` y nunca se envía al frontend. El mínimo actual
 de contraseña es 8 caracteres.
 

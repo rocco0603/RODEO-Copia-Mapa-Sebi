@@ -24,15 +24,16 @@ Decidido:
 ## Decisiones cerradas desde la implementación actual
 
 - La sesión usa JWT en cookie HttpOnly `rodeo_session`.
-- La sesión dura 7 días; `SameSite=Lax` en desarrollo y `Secure` en producción.
+- La sesión dura 7 días; `SameSite` es configurable (`Lax` por defecto) y `Secure` se aplica en producción. `SameSite=None` no se admite sin `Secure`.
 - La contraseña exige al menos 8 caracteres; el username debe ser único.
 - PostgreSQL remoto es Neon para el estado actual.
 - Copernicus es opcional en desarrollo y usa `COPERNICUS_CLIENT_ID`/
   `COPERNICUS_CLIENT_SECRET` sin exponer secretos al navegador.
 - La autenticación y los datos de mapa ya usan Neon mediante APIs privadas.
 
-Lo que sigue abierto es el deployment final, incluyendo dominio, CORS y
-atributos definitivos de cookies.
+Lo que sigue abierto es el deployment final: proveedor, dominios y valores de
+CORS/cookies. El soporte técnico ya existe mediante `CORS_ORIGINS`,
+`TRUST_PROXY`, `COOKIE_SAME_SITE` y `VITE_API_BASE_URL`.
 
 Pendiente:
 
@@ -119,8 +120,8 @@ Pendiente:
 
 - proveedor/entorno de despliegue del backend;
 - dominio/URL final;
-- configuración final de CORS/cookies según despliegue;
-- CI/CD.
+- valores finales de CORS/cookies según despliegue;
+- CI/CD de despliegue. La CI de validación (types, builds y unitarios) ya está implementada en GitHub Actions.
 
 ## Historial y estado actual
 
@@ -138,6 +139,10 @@ por ahora debido al límite conceptual actual de lotes por establecimiento.
 
 ## Ficha completa de lote
 
+Nota histórica: el párrafo siguiente describe la etapa de gateway anterior y
+queda reemplazado por “Centralización satelital — decisión cerrada” más abajo.
+Ya no está pendiente mover parsing, scoring o persistencia.
+
 La integraciÃ³n de Copernicus ya fue trasladada al backend Express. Queda como
 decisiÃ³n posterior mover tambiÃ©n el parsing/scoring y la persistencia fuera del
 frontend; esta etapa sÃ³lo mueve el gateway seguro.
@@ -150,6 +155,17 @@ al backend; esta ficha no introduce recomendaciones ni cambios de modelo.
 
 Open-Meteo ya estÃ¡ centralizado detrÃ¡s de Express. No requiere API key; la
 persistencia histÃ³rica sigue separada y no se fusiona con la consulta externa.
+
+## Centralización satelital — decisión cerrada
+
+Copernicus ya no es sólo un gateway seguro. El backend obtiene los polígonos
+desde PostgreSQL, construye y ejecuta S2/S1, interpreta, calcula el scoring
+provisional y persiste con reloj servidor. El frontend sólo envía IDs y muestra
+los DTOs. El endpoint raw `/api/copernicus/statistics` fue retirado.
+
+Siguen abiertas únicamente la calibración agronómica futura del scoring y la
+automatización/programación de actualizaciones; no está abierta la ubicación de
+esta lógica, que queda en backend.
 
 ## Ganado y GPS
 

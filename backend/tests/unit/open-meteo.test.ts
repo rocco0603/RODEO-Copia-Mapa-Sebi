@@ -20,7 +20,7 @@ describe('cliente backend de Open-Meteo', () => {
     }
   });
 
-  test('asocia respuestas array a cada lote y conserva sumas de 7 y 5 dÃ­as', async () => {
+  test('asocia respuestas array a cada lote y conserva sumas de 7 y 5 días', async () => {
     const client = new OpenMeteoClient(async (url) => {
       expect(new URL(url).searchParams.get('latitude')?.split(',')).toHaveLength(2);
       return respuesta([registro(), registro(2)]);
@@ -32,12 +32,12 @@ describe('cliente backend de Open-Meteo', () => {
     if (resultados['lote-2'].estado === 'ok') expect(resultados['lote-2'].clima.lluviaProximosDias).toBe(22);
   });
 
-  test('mantiene null como cero y controla HTTP 500 y JSON invÃ¡lido', async () => {
+  test('mantiene null como cero y controla HTTP 500 y JSON inválido', async () => {
     const nullClient = new OpenMeteoClient(async () => respuesta({ daily: { time: dias.map((dia) => dia.fecha), precipitation_sum: dias.map(() => null) } }));
     const nullResult = await nullClient.consultar([{ id: 'lote-1', polygon: lote(1, 2) }]);
     if (nullResult['lote-1'].estado === 'ok') expect(nullResult['lote-1'].clima.lluviaUltimos7Dias).toBe(0);
     const httpResult = await new OpenMeteoClient(async () => respuesta({}, false, 500)).consultar([{ id: 'lote-1', polygon: lote(1, 2) }]);
-    expect(httpResult['lote-1']).toMatchObject({ estado: 'error', mensaje: 'Open-Meteo respondiÃ³ HTTP 500.' });
+    expect(httpResult['lote-1']).toMatchObject({ estado: 'error', mensaje: 'Open-Meteo respondió HTTP 500.' });
     const jsonResult = await new OpenMeteoClient(async () => ({ ok: true, status: 200, json: async () => { throw new Error('json'); } })).consultar([{ id: 'lote-1', polygon: lote(1, 2) }]);
     expect(jsonResult['lote-1']).toMatchObject({ estado: 'error' });
   });

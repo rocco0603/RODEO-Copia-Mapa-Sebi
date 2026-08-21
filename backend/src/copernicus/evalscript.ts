@@ -1,23 +1,6 @@
-/**
- * Evalscript (V3) para la Statistical API de Sentinel Hub sobre Sentinel-2 L2A.
- *
- * Devuelve cuatro índices por píxel y una máscara de validez:
- *  - ndvi: vigor / biomasa verde         (B08, B04)
- *  - ndmi: humedad de la vegetación      (B08, B11)
- *  - ndwi: agua libre / anegamiento      (B03, B08)
- *  - evi:  vegetación corregida por suelo y atmósfera (B08, B04, B02)
- *
- * La máscara `dataMask` se pone en 0 para nubes, sombras, cirrus, nieve y
- * píxeles saturados según la banda de clasificación de escena (SCL). La
- * Statistical API cuenta esos píxeles como `noDataCount`, así que del lado del
- * front podemos saber qué porcentaje del lote se vio realmente despejado.
- */
 export const EVALSCRIPT_INDICES = `//VERSION=3
 function setup() {
   return {
-    // Sin "units": Sentinel-2 L2A ya entrega las bandas ópticas en reflectancia
-    // (0..1) por defecto. Forzar REFLECTANCE acá rompe, porque SCL y dataMask
-    // no admiten esa unidad.
     input: [{
       bands: ["B02", "B03", "B04", "B08", "B11", "SCL", "dataMask"]
     }],
@@ -32,8 +15,6 @@ function setup() {
   };
 }
 
-// SCL: 0 sin dato, 1 saturado/defectuoso, 3 sombra de nube,
-//      8 nube prob. media, 9 nube prob. alta, 10 cirrus, 11 nieve/hielo.
 function esPixelDespejado(scl) {
   return scl !== 0 && scl !== 1 && scl !== 3 &&
          scl !== 8 && scl !== 9 && scl !== 10 && scl !== 11;
@@ -69,21 +50,9 @@ function evaluatePixel(muestra) {
   };
 }`;
 
-/**
- * Evalscript (V3) para la Statistical API sobre Sentinel-1 GRD (radar de apertura
- * sintética, banda C). Es el respaldo cuando no hay ninguna pasada óptica
- * despejada: el radar no lo tapan las nubes.
- *
- * Devuelve el RVI4S1 (Radar Vegetation Index para dual-pol VV+VH), que crece
- * con la biomasa/densidad del canopeo. No es NDVI ni es comparable con la
- * escala de puntaje óptico: sólo sirve como señal de "hay vegetación" cuando
- * no tenemos nada mejor.
- */
 export const EVALSCRIPT_RADAR = `//VERSION=3
 function setup() {
   return {
-    // LINEAR_POWER explícito: el RVI4S1 se calcula sobre potencia lineal, no
-    // sobre los dB que entrega Sentinel Hub por defecto.
     input: [{
       bands: ["VV", "VH"],
       units: "LINEAR_POWER"
@@ -109,3 +78,4 @@ function evaluatePixel(muestra) {
 
   return { rvi: [rvi > 1 ? 1 : rvi], dataMask: [1] };
 }`;
+
