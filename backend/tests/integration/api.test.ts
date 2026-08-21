@@ -238,6 +238,22 @@ integration('API backend de RODEO', () => {
       expect(rows.rows.find((row) => row.fuente === 'sentinel-2').puntaje).toBe(90);
     });
 
+    test('persiste alertas Sentinel-2 como JSON y las conserva en el upsert', async () => {
+      const { agent, lot } = await prepararLote('satellite_alerts_user');
+      const payload = { ...medicionOptica, alertas: ['dato antiguo', 'cobertura baja'] };
+      const primera = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send(payload);
+      expect(primera.status).toBe(201);
+
+      const historial = await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?fuente=sentinel-2`);
+      expect(historial.status).toBe(200);
+      expect(historial.body.mediciones[0].alertas).toEqual(['dato antiguo', 'cobertura baja']);
+
+      const segunda = await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...payload, alertas: ['cobertura actualizada'], puntaje: 90 });
+      expect(segunda.status).toBe(201);
+      expect((await pool.query('SELECT COUNT(*)::int AS count FROM mediciones_satelitales WHERE lote_id = $1 AND fuente = $2', [lot.id, 'sentinel-2'])).rows[0].count).toBe(1);
+      expect((await agent.get(`/api/lotes/${lot.id}/mediciones-satelitales?fuente=sentinel-2`)).body.mediciones[0].alertas).toEqual(['cobertura actualizada']);
+    });
+
     test('rechaza fuente, fecha y estadísticas inválidas', async () => {
       const { agent, lot } = await prepararLote('invalid_satellite_user');
       expect((await agent.post(`/api/lotes/${lot.id}/mediciones-satelitales`).send({ ...medicionOptica, fuente: 'fake' })).body.error.code).toBe('INVALID_SOURCE');

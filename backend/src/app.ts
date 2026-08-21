@@ -4,7 +4,7 @@ import { authRouter } from './routes/auth.js';
 import { establecimientoRouter } from './routes/establecimiento.js';
 import { lotesRouter } from './routes/lotes.js';
 import { historialRouter } from './routes/historial.js';
-import { errorResponse } from './http/errors.js';
+import { ApiError, errorResponse } from './http/errors.js';
 
 export const app = express();
 
@@ -25,6 +25,9 @@ app.use((_req, res) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (!(error instanceof ApiError)) {
+    console.error('[api] Error interno:', error instanceof Error ? error.stack ?? error.message : error);
+  }
   const response = errorResponse(error);
   res.status(response.status).json(response.body);
 });

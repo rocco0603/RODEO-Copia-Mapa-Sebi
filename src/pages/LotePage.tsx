@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { analizarLotes } from "../copernicus/api";
+import type { ResultadoLote } from "../copernicus/types";
 import { consultarClimaLotes } from "../clima/api";
 import { obtenerLotes } from "../api/rodeo";
 import { ApiError } from "../api/client";
@@ -131,14 +132,26 @@ export default function LotePage() {
   async function actualizarSatelite() {
     if (!lote || ocupado) return;
     setOcupado("satelite"); setError(null);
+    let respuestas: ResultadoLote[];
     try {
-      const respuestas = await analizarLotes([lote]);
-      const respuesta = respuestas[0];
-      if (respuesta?.estado === "ok" || respuesta?.estado === "radar") {
-        await Promise.all(medicionDesdeResultado(respuesta, Date.now()).map((medicion) => guardarMedicionSatelital(lote.id, medicion)));
-        await cargarDatos();
-      } else setError(respuesta?.mensaje ?? "Copernicus no devolvió datos utilizables.");
-    } catch (reason) { setError(mensajeError(reason)); }
+      respuestas = await analizarLotes([lote]);
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : "No se pudo consultar Copernicus. Intentá nuevamente.");
+      setOcupado(null);
+      return;
+    }
+    const respuesta = respuestas[0];
+    if (respuesta?.estado !== "ok" && respuesta?.estado !== "radar") {
+      setError(respuesta?.mensaje ?? "Copernicus no devolvió datos utilizables.");
+      setOcupado(null);
+      return;
+    }
+    try {
+      await Promise.all(medicionDesdeResultado(respuesta, Date.now()).map((medicion) => guardarMedicionSatelital(lote.id, medicion)));
+      await cargarDatos();
+    } catch {
+      setError("Los datos satelitales se obtuvieron correctamente, pero no se pudieron guardar en el historial.");
+    }
     finally { setOcupado(null); }
   }
 

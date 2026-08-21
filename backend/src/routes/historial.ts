@@ -57,6 +57,25 @@ function statistic(value: unknown, campo: string): Estadistica {
   };
 }
 
+function jsonb(value: unknown, campo: string): string | null {
+  if (value === undefined || value === null) return null;
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new Error('undefined JSON');
+    return serialized;
+  } catch {
+    throw new ApiError(400, 'INVALID_JSON', `${campo} debe ser un valor JSON vÃ¡lido.`);
+  }
+}
+
+function alertas(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new ApiError(400, 'INVALID_ALERTS', 'alertas debe ser un arreglo de textos.');
+  }
+  return jsonb(value, 'alertas');
+}
+
 function measurementDto(row: Record<string, unknown>) {
   return {
     id: row.id, fuente: row.fuente, observedAt: row.observed_at, consultedAt: row.consulted_at,
@@ -81,7 +100,7 @@ historialRouter.post('/:id/mediciones-satelitales', asyncHandler(async (req, res
   const puntaje = body.puntaje === undefined || body.puntaje === null ? null : nullableNumber(body.puntaje, 'puntaje');
   if (puntaje !== null && !Number.isInteger(puntaje)) throw new ApiError(400, 'INVALID_SCORE', 'puntaje debe ser entero.');
   const categoria = body.categoria === undefined || body.categoria === null ? null : typeof body.categoria === 'string' ? body.categoria : (() => { throw new ApiError(400, 'INVALID_CATEGORY', 'categoria debe ser texto.'); })();
-  const values = [loteId, body.fuente, observedAt, consultedAt, nullableNumber(body.coberturaValida, 'coberturaValida'), ndvi.media, ndvi.mediana, ndvi.min, ndvi.max, ndvi.desvio, ndmi.media, ndmi.mediana, ndmi.min, ndmi.max, ndmi.desvio, ndwi.media, ndwi.mediana, ndwi.min, ndwi.max, ndwi.desvio, evi.media, evi.mediana, evi.min, evi.max, evi.desvio, rvi.media, rvi.mediana, rvi.min, rvi.max, rvi.desvio, puntaje, categoria, body.alertas ?? null, body.rawMetadata ?? null];
+  const values = [loteId, body.fuente, observedAt, consultedAt, nullableNumber(body.coberturaValida, 'coberturaValida'), ndvi.media, ndvi.mediana, ndvi.min, ndvi.max, ndvi.desvio, ndmi.media, ndmi.mediana, ndmi.min, ndmi.max, ndmi.desvio, ndwi.media, ndwi.mediana, ndwi.min, ndwi.max, ndwi.desvio, evi.media, evi.mediana, evi.min, evi.max, evi.desvio, rvi.media, rvi.mediana, rvi.min, rvi.max, rvi.desvio, puntaje, categoria, alertas(body.alertas), jsonb(body.rawMetadata, 'rawMetadata')];
   const result = await pool.query(
     `INSERT INTO mediciones_satelitales (lote_id, fuente, observed_at, consulted_at, cobertura_valida,
       ndvi_media, ndvi_mediana, ndvi_min, ndvi_max, ndvi_desvio, ndmi_media, ndmi_mediana, ndmi_min, ndmi_max, ndmi_desvio,
@@ -137,7 +156,7 @@ historialRouter.post('/:id/clima', asyncHandler(async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const consulta = await client.query(`INSERT INTO consultas_clima (lote_id, consulted_at, lluvia_ultimos_7_dias, lluvia_proximos_dias, categoria, raw_metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [loteId, timestamp(body.consultedAt, 'consultedAt'), nullableNumber(body.lluviaUltimos7Dias, 'lluviaUltimos7Dias'), nullableNumber(body.lluviaProximosDias, 'lluviaProximosDias'), typeof body.categoria === 'string' ? body.categoria : null, body.rawMetadata ?? null]);
+    const consulta = await client.query(`INSERT INTO consultas_clima (lote_id, consulted_at, lluvia_ultimos_7_dias, lluvia_proximos_dias, categoria, raw_metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [loteId, timestamp(body.consultedAt, 'consultedAt'), nullableNumber(body.lluviaUltimos7Dias, 'lluviaUltimos7Dias'), nullableNumber(body.lluviaProximosDias, 'lluviaProximosDias'), typeof body.categoria === 'string' ? body.categoria : null, jsonb(body.rawMetadata, 'rawMetadata')]);
     for (const value of body.dias) {
       const dia = value as Record<string, unknown>;
       if (typeof dia.esPronostico !== 'boolean') throw new ApiError(400, 'INVALID_FORECAST_FLAG', 'esPronostico debe ser booleano.');
