@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp, hoyCalendario } from '../../src/date.js';
+import { diasEntreFechas, esFechaCalendario, horasDesdeTimestamp, hoyCalendario } from '../../src/fechas.js';
 
 describe('fechas calendario y frescura', () => {
   test('calcula días sin convertir DATE en instante local', () => {

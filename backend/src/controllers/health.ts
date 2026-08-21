@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
+import { pool } from '../base-datos/pool.js';
 
 export async function readiness(_req: Request, res: Response): Promise<void> {
   try {

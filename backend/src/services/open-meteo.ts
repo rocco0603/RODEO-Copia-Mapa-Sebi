@@ -1,6 +1,6 @@
 import * as turf from '@turf/turf';
 import type { Feature, Polygon } from 'geojson';
-import { esFechaCalendario } from '../date.js';
+import { esFechaCalendario } from '../fechas.js';
 
 const ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
 const DIAS_PASADOS = 7;

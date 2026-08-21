@@ -1,6 +1,6 @@
 import { app } from './app.js';
-import { env } from './config/env.js';
-import { pool } from './db/pool.js';
+import { env } from './configuracion/env.js';
+import { pool } from './base-datos/pool.js';
 
 const SHUTDOWN_TIMEOUT_MS = 75_000;
 
@@ -50,4 +50,3 @@ function apagar(signal: NodeJS.Signals): void {
 
 process.once('SIGTERM', apagar);
 process.once('SIGINT', apagar);
-

@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express';
-import { pool } from '../db/pool.js';
+import { pool } from '../base-datos/pool.js';
 import { ApiError } from '../http/errors.js';
 import { leerToken, verificarToken } from './session.js';
 

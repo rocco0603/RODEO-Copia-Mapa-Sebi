@@ -83,6 +83,15 @@ Una vez terminado el onboarding, borrar o desactivar todos los lotes NO vuelve a
 - cambios pequeños y comprobables;
 - no borrar funcionalidad existente para “simplificar” una tarea.
 
+## Organización del backend
+
+- conservar las capas profesionales `routes`, `controllers` y `services`;
+- autenticación interna vive en `backend/src/autenticacion`;
+- configuración de entorno vive en `backend/src/configuracion`;
+- conexión y verificación PostgreSQL viven en `backend/src/base-datos`;
+- helpers transversales del protocolo permanecen en `backend/src/http`;
+- no reintroducir las carpetas abreviadas antiguas `auth`, `config` o `db`.
+
 ## Antes de cerrar una tarea
 
 Como mínimo:

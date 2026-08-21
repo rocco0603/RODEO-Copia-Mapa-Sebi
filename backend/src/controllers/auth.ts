@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { guardarCookie, limpiarCookie, crearToken } from '../auth/session.js';
-import { pool } from '../db/pool.js';
+import { guardarCookie, limpiarCookie, crearToken } from '../autenticacion/session.js';
+import { pool } from '../base-datos/pool.js';
 import { ApiError } from '../http/errors.js';
 
 function datosUsuario(row: { id: string; username: string; onboarding_completed_at: Date | null }) {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requiereAutenticacion } from '../auth/middleware.js';
+import { requiereAutenticacion } from '../autenticacion/middleware.js';
 import { actualizarLote, crearLote, eliminarLote, obtenerEstadoLotes, obtenerLotes } from '../controllers/lotes.js';
 import { asyncHandler } from '../http/async-handler.js';
 

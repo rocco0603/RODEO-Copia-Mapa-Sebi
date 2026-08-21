@@ -95,7 +95,7 @@ No se leyó ni se documenta `node_modules`, y no se usaron secretos de archivos 
 6. `backend/src/routes/auth.ts` aplica `authRateLimiter` a login y registro y delega en `controllers/auth.ts`. Allí `credenciales()` exige username no vacío y password de al menos 8 caracteres.
 7. El controller consulta `usuarios` con `WHERE username = $1`. `$1` es un parámetro, no texto concatenado.
 8. `bcrypt.compare(password, user.password_hash)` compara la clave recibida con el hash guardado. Si no existe el usuario o no coincide, ambos casos producen el mismo `401 INVALID_CREDENTIALS`.
-9. `crearToken(user.id)`, en `backend/src/auth/session.ts`, firma un JWT cuyo `subject` (`sub`) es el UUID del usuario y cuya expiración es de 7 días.
+9. `crearToken(user.id)`, en `backend/src/autenticacion/session.ts`, firma un JWT cuyo `subject` (`sub`) es el UUID del usuario y cuya expiración es de 7 días.
 10. `guardarCookie()` envía `Set-Cookie: rodeo_session=...` con `Path=/`, `HttpOnly`, `SameSite` configurable, `Max-Age` de 7 días y `Secure` en producción.
 11. La respuesta `200` contiene sólo `{ user: { id, username, onboardingCompleted } }`; nunca contiene el hash.
 12. El navegador almacena la cookie. JavaScript recibe el DTO del usuario, pero no puede leer una cookie `HttpOnly`.
@@ -198,11 +198,11 @@ La carga automática de clima de `RodeoApp` ocurre cuando cambia `establecimient
 | Frontend API client | `src/api/client.ts` | Uniforma URL, cookie, JSON y errores para el navegador. |
 | Route | `routes/lotes.ts` | Define `Router`, método, path, middleware y controller, respetando el orden de matching. |
 | Controller | `controllers/lotes.ts` | Lee `req`, valida el caso HTTP, coordina DB/servicios y construye la respuesta. |
-| Middleware | `auth/middleware.ts` | Ejecuta una tarea transversal antes de la ruta: autenticar y cargar `req.usuario`. |
+| Middleware | `autenticacion/middleware.ts` | Ejecuta una tarea transversal antes de la ruta: autenticar y cargar `req.usuario`. |
 | Service | `services/open-meteo.ts` | Encapsula una integración o operación reutilizable fuera del detalle HTTP de Express. |
-| Domain logic | `copernicus/scoring.ts`, `geometry.ts` | Reglas y cálculos del dominio, sin decidir una URL Express. |
-| Config | `config/parse-env.ts` | Convierte variables de entorno en configuración validada. |
-| DB | `db/pool.ts` y migraciones | Conexión y estructura persistente. |
+| Domain logic | `copernicus/scoring.ts`, `geometria.ts` | Reglas y cálculos del dominio, sin decidir una URL Express. |
+| Config | `configuracion/parse-env.ts` | Convierte variables de entorno en configuración validada. |
+| DB | `base-datos/pool.ts` y migraciones | Conexión y estructura persistente. |
 | HTTP helper | `http/errors.ts`, `http/query.ts` | Comportamiento común para errores, query params, logging y request IDs. |
 
 Separarlas permite leer el catálogo HTTP sin atravesar SQL, probar algoritmos sin red, cambiar la forma de despliegue sin tocar scoring y reutilizar el mismo armado de estado en una ruta individual y otra batch. Los controllers siguen siendo una capa HTTP sencilla: no se introdujeron repositories, clases ni otra abstracción de dominio.
@@ -304,7 +304,7 @@ El cliente nunca envía un `user_id` que el backend acepte como autoridad. Un UU
 
 ### Conexión y pool
 
-`DATABASE_URL` identifica servidor, credenciales y base. `backend/src/db/pool.ts` crea un `Pool` de `pg` con máximo 10 conexiones, timeout de conexión de 15 s e idle de 30 s.
+`DATABASE_URL` identifica servidor, credenciales y base. `backend/src/base-datos/pool.ts` crea un `Pool` de `pg` con máximo 10 conexiones, timeout de conexión de 15 s e idle de 30 s.
 
 `pool.query(sql, values)` toma una conexión, ejecuta y la devuelve. Para transacciones se usa `pool.connect()`, porque `BEGIN`, operaciones y `COMMIT` deben ocurrir en la misma conexión; luego hay que llamar `client.release()`.
 
@@ -874,8 +874,8 @@ Las integraciones sustituyen transporte/gateway de Copernicus y Open-Meteo media
 - `tests/unit/analizador-satelital.test.ts`: bodies, parsing, fallback, scoring, concurrencia.
 - `tests/unit/config.test.ts`: validación de entorno.
 - `tests/unit/copernicus.test.ts`: credenciales, OAuth, cache y retry 401.
-- `tests/unit/date.test.ts`: `DATE`, diferencias y frescura.
-- `tests/unit/geometry.test.ts`: estructura, contención y solapamiento.
+- `tests/unit/fechas.test.ts`: `DATE`, diferencias y frescura.
+- `tests/unit/geometria.test.ts`: estructura, contención y solapamiento.
 - `tests/unit/http-hardening.test.ts`: headers, CORS, body, errores y logs.
 - `tests/unit/open-meteo.test.ts`: request multi-coordinate e interpretación.
 - `tests/unit/query.test.ts`: paginación, booleanos y rangos.
@@ -1082,6 +1082,68 @@ Sidebar habilita useNotificaciones
 
 ## 30. Inventario de `backend/src`: los 45 archivos
 
+La estructura definitiva usa nombres completos para las carpetas internas que
+antes eran abreviaturas y conserva los términos profesionales `routes`,
+`controllers` y `services`:
+
+```text
+backend/src/
+├── app.ts
+├── server.ts
+├── fechas.ts
+├── geometria.ts
+├── autenticacion/
+│   ├── middleware.ts
+│   ├── session.ts
+│   └── types.ts
+├── base-datos/
+│   ├── pool.ts
+│   └── schema-verifier.ts
+├── configuracion/
+│   ├── env.ts
+│   └── parse-env.ts
+├── controllers/
+│   ├── auth.ts
+│   ├── clima.ts
+│   ├── copernicus.ts
+│   ├── establecimiento.ts
+│   ├── health.ts
+│   ├── historial.ts
+│   ├── lotes.ts
+│   ├── notificaciones.ts
+│   └── satelite.ts
+├── copernicus/
+│   ├── analizar.ts
+│   ├── evalscript.ts
+│   ├── scoring.ts
+│   └── types.ts
+├── http/
+│   ├── async-handler.ts
+│   ├── auth-rate-limit.ts
+│   ├── errors.ts
+│   ├── logger.ts
+│   ├── query.ts
+│   └── request-id.ts
+├── routes/
+│   ├── auth.ts
+│   ├── clima.ts
+│   ├── copernicus.ts
+│   ├── establecimiento.ts
+│   ├── health.ts
+│   ├── historial.ts
+│   ├── lotes.ts
+│   ├── notificaciones.ts
+│   └── satelite.ts
+├── services/
+│   ├── consultas-clima.ts
+│   ├── copernicus.ts
+│   ├── estado-lotes.ts
+│   ├── mediciones-satelitales.ts
+│   └── open-meteo.ts
+└── types/
+    └── express.d.ts
+```
+
 ### Raíz, configuración y DB
 
 #### `backend/src/app.ts`
@@ -1100,42 +1162,42 @@ Sidebar habilita useNotificaciones
 - **Funciones importantes:** `apagar()` y `finalizar()`.
 - **Entrada/salida:** señales/requests; escucha puerto, emite logs y cierra recursos.
 
-#### `backend/src/config/env.ts`
+#### `backend/src/configuracion/env.ts`
 
 - **Existe para:** cargar `.env` con `dotenv/config` una vez y exportar config validada.
 - **Lo importan:** app, server, pool, sesión y logger.
 - **Importa:** `parseEnv`.
 - **Salida:** singleton `env`.
 
-#### `backend/src/config/parse-env.ts`
+#### `backend/src/configuracion/parse-env.ts`
 
 - **Existe para:** validar tipos, seguridad y defaults sin efectos de red.
 - **Lo importan:** `env.ts` y tests unitarios.
 - **Funciones:** `parseEnv()` y parsers internos de puerto, URL, CORS, proxy y SameSite.
 - **Entrada/salida:** mapa de strings opcionales → `ConfiguracionEntorno` o error de arranque.
 
-#### `backend/src/db/pool.ts`
+#### `backend/src/base-datos/pool.ts`
 
 - **Existe para:** centralizar conexión PostgreSQL y parser `DATE`.
 - **Lo importan:** middleware, controllers, servicios, servidor y scripts indirectamente.
 - **Importa:** `pg` y `env`.
 - **Salida:** singleton `pool`.
 
-#### `backend/src/db/schema-verifier.ts`
+#### `backend/src/base-datos/schema-verifier.ts`
 
 - **Existe para:** describir y validar el contrato estructural mínimo de PostgreSQL.
 - **Lo importan:** `scripts/verify-schema.ts` y tests unitarios.
 - **Comprueba:** ocho tablas, todas sus columnas/tipos/nullability, PK, FK, UNIQUE, CHECK e índices esenciales.
 - **Salida:** snapshot seguro de catálogo y lista de diferencias; no lee filas de negocio ni secretos.
 
-#### `backend/src/date.ts`
+#### `backend/src/fechas.ts`
 
 - **Existe para:** fechas calendario y frescura sin errores de timezone.
 - **Lo importan:** query helper, historial, estado y tests.
 - **Funciones:** `esFechaCalendario`, `diasEntreFechas`, `hoyCalendario`, `horasDesdeTimestamp`.
 - **Entrada/salida:** strings/instantes → validación y diferencias numéricas.
 
-#### `backend/src/geometry.ts`
+#### `backend/src/geometria.ts`
 
 - **Existe para:** reglas GeoJSON/Turf compartidas.
 - **Lo importan:** controllers de establecimiento, lotes y satélite, además de tests.
@@ -1152,13 +1214,13 @@ Sidebar habilita useNotificaciones
 
 ### Autenticación
 
-#### `backend/src/auth/types.ts`
+#### `backend/src/autenticacion/types.ts`
 
 - **Existe para:** tipos públicos de usuario y payload mínimo.
 - **Lo importan:** sesión y augmentación de Express.
 - **Salida:** `Usuario` y `JwtPayload { sub }`.
 
-#### `backend/src/auth/session.ts`
+#### `backend/src/autenticacion/session.ts`
 
 - **Existe para:** JWT y serialización de la cookie.
 - **Lo importan:** controller auth y middleware.
@@ -1166,7 +1228,7 @@ Sidebar habilita useNotificaciones
 - **Funciones:** `crearToken`, `leerToken`, `verificarToken`, `guardarCookie`, `limpiarCookie`.
 - **Entrada/salida:** userId/request/response ↔ token/cabecera `Set-Cookie`.
 
-#### `backend/src/auth/middleware.ts`
+#### `backend/src/autenticacion/middleware.ts`
 
 - **Existe para:** resolver sesión y usuario DB antes de rutas privadas.
 - **Lo importan:** todos los routers privados y `/auth/me`.
@@ -1641,10 +1703,10 @@ Deberías poder explicar sin mirar:
 
 | Si modifico... | Probablemente debo revisar... | Motivo |
 |---|---|---|
-| Auth/cookie | `auth/*`, route/controller auth, `App`, API client, CORS/SameSite, tests | sesión cruza browser, middleware y DB |
+| Auth/cookie | `autenticacion/*`, route/controller auth, `App`, API client, CORS/SameSite, tests | sesión cruza browser, middleware y DB |
 | `usuarios`/onboarding | migración, auth DTO, middleware, creación de lote, `RodeoApp` | el estado se calcula en varios puntos |
 | Schema DB | migraciones, queries, DTOs, fixtures, cleanup/verify scripts | código y estructura deben coincidir |
-| Geometría | `geometry.ts`, controllers establecimiento/lotes, `geo.ts`, MapEngine y tests | hay validación UX y autoridad backend |
+| Geometría | `geometria.ts`, controllers establecimiento/lotes, `geo.ts`, MapEngine y tests | hay validación UX y autoridad backend |
 | Lotes | API rodeo, `RodeoApp`, ficha, satélite/clima/estado, ownership | es entidad central de casi todo historial |
 | Soft delete | todas las queries de lote/historial/estado | olvidar `deleted_at IS NULL` puede reexponer datos |
 | Satélite | analyzer, evalscripts, scoring, servicio CDSE, persistencia, DTO frontend/tests | pipeline completo y dos fuentes físicas |

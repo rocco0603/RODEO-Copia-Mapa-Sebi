@@ -216,10 +216,19 @@ onboarding visual completo quedan para etapas posteriores.
 ## Arquitectura
 
 ```
-backend/src/services/copernicus.ts OAuth, TLS y transporte de Sentinel Hub
-backend/src/copernicus/            requests, evalscripts, parsing y scoring provisional
-backend/src/controllers/           handlers HTTP, validación y coordinación con DB/servicios
+backend/src/app.ts                 composición de Express y routers
+backend/src/server.ts              arranque y cierre ordenado del proceso
+backend/src/autenticacion/         sesión JWT, cookie y middleware de usuario
+backend/src/configuracion/         carga y validación de variables de entorno
+backend/src/base-datos/            pool PostgreSQL y verificación del schema
 backend/src/routes/                método, path, middleware y controller de los endpoints
+backend/src/controllers/           handlers HTTP, validación y coordinación
+backend/src/services/copernicus.ts OAuth, TLS y transporte de Sentinel Hub
+backend/src/services/              integraciones y operaciones reutilizables
+backend/src/copernicus/            requests, evalscripts, parsing y scoring provisional
+backend/src/http/                  errores y helpers HTTP compartidos
+backend/src/fechas.ts              fechas calendario y frescura
+backend/src/geometria.ts           validaciones GeoJSON/Turf
 backend/.env                       credenciales opcionales de CDSE (gitignored)
 scripts/exportar-ca.mjs     exporta CAs de Windows para redes corporativas
 

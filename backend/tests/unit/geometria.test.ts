@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { estaContenido, esPolygonFeature, seSuperpone } from '../../src/geometry.js';
+import { estaContenido, esPolygonFeature, seSuperpone } from '../../src/geometria.js';
 import { establecimiento, lote } from '../helpers/fixtures.js';
 
 describe('validación geométrica de RODEO', () => {

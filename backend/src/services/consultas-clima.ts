@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool } from '../db/pool.js';
+import { pool } from '../base-datos/pool.js';
 import { ApiError } from '../http/errors.js';
 import type { ResultadoClimaLote } from './open-meteo.js';
 

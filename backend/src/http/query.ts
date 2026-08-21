@@ -1,6 +1,6 @@
 import type { ParsedQs } from 'qs';
 import { ApiError } from './errors.js';
-import { esFechaCalendario } from '../date.js';
+import { esFechaCalendario } from '../fechas.js';
 
 export interface Paginacion {
   limit: number;

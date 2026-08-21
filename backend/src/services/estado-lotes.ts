@@ -1,5 +1,5 @@
-import { pool } from '../db/pool.js';
-import { diasEntreFechas, horasDesdeTimestamp, hoyCalendario } from '../date.js';
+import { pool } from '../base-datos/pool.js';
+import { diasEntreFechas, horasDesdeTimestamp, hoyCalendario } from '../fechas.js';
 
 export interface EstadoLote {
   lote: { id: string; numero: number; apodo: string | null; activo: boolean };

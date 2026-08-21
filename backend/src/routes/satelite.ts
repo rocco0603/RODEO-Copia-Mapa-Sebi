@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requiereAutenticacion } from '../auth/middleware.js';
+import { requiereAutenticacion } from '../autenticacion/middleware.js';
 import { actualizarSateliteLote, actualizarSateliteLotes } from '../controllers/satelite.js';
 import { asyncHandler } from '../http/async-handler.js';
 

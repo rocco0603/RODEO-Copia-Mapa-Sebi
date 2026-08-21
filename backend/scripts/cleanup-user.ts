@@ -1,4 +1,4 @@
-import { pool } from '../src/db/pool.js';
+import { pool } from '../src/base-datos/pool.js';
 import { eliminarUsuarioSmoke } from './smoke-cleanup.js';
 
 try {

@@ -1,5 +1,5 @@
-import { pool } from '../src/db/pool.js';
-import { hoyCalendario } from '../src/date.js';
+import { pool } from '../src/base-datos/pool.js';
+import { hoyCalendario } from '../src/fechas.js';
 import { eliminarUsuarioSmoke } from './smoke-cleanup.js';
 
 const baseUrl = `http://localhost:${process.env.PORT ?? 3001}`;

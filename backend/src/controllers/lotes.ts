@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
-import { estaContenido, esPolygonFeature, seSuperpone } from '../geometry.js';
+import { pool } from '../base-datos/pool.js';
+import { estaContenido, esPolygonFeature, seSuperpone } from '../geometria.js';
 import { ApiError } from '../http/errors.js';
 import { obtenerEstadosDeLotes } from '../services/estado-lotes.js';
 

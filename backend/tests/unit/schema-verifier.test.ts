@@ -6,7 +6,7 @@ import {
   indicesEsperados,
   tablasEsperadas,
   type SnapshotSchema,
-} from '../../src/db/schema-verifier.js';
+} from '../../src/base-datos/schema-verifier.js';
 
 function snapshotCompleto(): SnapshotSchema {
   return {

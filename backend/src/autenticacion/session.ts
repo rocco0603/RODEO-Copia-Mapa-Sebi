@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import type { Request, Response } from 'express';
-import { env } from '../config/env.js';
+import { env } from '../configuracion/env.js';
 import type { JwtPayload } from './types.js';
 
 export const COOKIE_NAME = 'rodeo_session';

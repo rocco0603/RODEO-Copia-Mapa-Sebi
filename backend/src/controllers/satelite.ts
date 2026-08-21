@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 import { analizadorSatelital } from '../copernicus/analizar.js';
 import type { LoteSatelital } from '../copernicus/types.js';
-import { pool } from '../db/pool.js';
-import { esPolygonFeature } from '../geometry.js';
+import { pool } from '../base-datos/pool.js';
+import { esPolygonFeature } from '../geometria.js';
 import { ApiError } from '../http/errors.js';
 import { persistirResultadoSatelital } from '../services/mediciones-satelitales.js';
 

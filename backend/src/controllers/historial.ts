@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
-import { esFechaCalendario, hoyCalendario } from '../date.js';
+import { pool } from '../base-datos/pool.js';
+import { esFechaCalendario, hoyCalendario } from '../fechas.js';
 import { ApiError } from '../http/errors.js';
 import { leerPaginacion, leerRangoCalendario, type Paginacion, type RangoCalendario } from '../http/query.js';
 import { obtenerEstadosDeLotes } from '../services/estado-lotes.js';

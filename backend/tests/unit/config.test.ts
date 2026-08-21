@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseEnv } from '../../src/config/parse-env.js';
+import { parseEnv } from '../../src/configuracion/parse-env.js';
 
 const SECRET = 'secreto-de-prueba-con-mas-de-32-caracteres';
 

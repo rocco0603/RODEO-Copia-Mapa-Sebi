@@ -132,7 +132,7 @@ No hay que asumir que algo "debería" funcionar: comprobarlo y documentar cualqu
 ## Hardening y despliegue
 
 La configuración backend se valida al arrancar. Mantener centralizadas las
-variables en `src/config`: DB y JWT son obligatorias, Copernicus es opcional,
+variables en `src/configuracion`: DB y JWT son obligatorias, Copernicus es opcional,
 CORS usa orígenes exactos y `SameSite=None` sólo es válido en producción con
 cookie `Secure`. `TRUST_PROXY` debe representar saltos reales, no habilitarse
 genéricamente.

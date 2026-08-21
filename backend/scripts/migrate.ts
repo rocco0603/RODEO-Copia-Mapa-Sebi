@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { pool } from '../src/db/pool.js';
+import { pool } from '../src/base-datos/pool.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const migrationDirectory = scriptDirectory.endsWith('dist\\scripts') || scriptDirectory.endsWith('dist/scripts')

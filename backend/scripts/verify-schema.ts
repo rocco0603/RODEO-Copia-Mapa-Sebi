@@ -1,5 +1,5 @@
-import { pool } from '../src/db/pool.js';
-import { evaluarSchema, obtenerSnapshotSchema, tablasEsperadas } from '../src/db/schema-verifier.js';
+import { pool } from '../src/base-datos/pool.js';
+import { evaluarSchema, obtenerSnapshotSchema, tablasEsperadas } from '../src/base-datos/schema-verifier.js';
 
 try {
   const snapshot = await obtenerSnapshotSchema(pool);

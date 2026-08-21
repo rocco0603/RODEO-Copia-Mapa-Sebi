@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import { env } from './config/env.js';
+import { env } from './configuracion/env.js';
 import { ApiError, errorResponse } from './http/errors.js';
 import { registrarError } from './http/logger.js';
 import { asignarRequestId } from './http/request-id.js';

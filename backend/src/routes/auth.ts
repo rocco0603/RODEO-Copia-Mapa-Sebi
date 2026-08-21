@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { cerrarSesion, iniciarSesion, obtenerSesion, registrar } from '../controllers/auth.js';
-import { requiereAutenticacion } from '../auth/middleware.js';
+import { requiereAutenticacion } from '../autenticacion/middleware.js';
 import { asyncHandler } from '../http/async-handler.js';
 import { authRateLimiter } from '../http/auth-rate-limit.js';
 

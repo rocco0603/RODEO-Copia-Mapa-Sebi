@@ -21,8 +21,8 @@ describe('hardening HTTP', () => {
 
     const modules = await Promise.all([
       import('../../src/app.js'),
-      import('../../src/db/pool.js'),
-      import('../../src/auth/session.js'),
+      import('../../src/base-datos/pool.js'),
+      import('../../src/autenticacion/session.js'),
       import('../../src/http/logger.js'),
     ]);
     app = modules[0].app;

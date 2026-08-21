@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool } from '../db/pool.js';
+import { pool } from '../base-datos/pool.js';
 import type { EstadisticaIndice, ResultadoLote } from '../copernicus/types.js';
 
 export interface MedicionSatelitalPersistible {
